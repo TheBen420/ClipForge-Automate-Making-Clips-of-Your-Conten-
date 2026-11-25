@@ -402,7 +402,33 @@ class Api:
     def list_clips(self):
         rows = cf.disk_clips(self.cfg)
         rows.sort(key=lambda row: (row.get("verdict") is not None, row["path"]))
+        root = cf.media_root(self.cfg)
+        for row in rows:
+            row["source"] = self._source(row["path"], root)
+            try:
+                row["added"] = int(Path(row["path"]).stat().st_mtime)
+            except OSError:
+                row["added"] = 0
         return rows
+
+    @staticmethod
+    def _source(path, root):
+        """Which batch or session a clip came from, so a long list can be grouped.
+
+        Clips sit under clips/<batch>/ and ready/<session>/<take>/, and the folder that holds
+        them is what the page groups on.
+        """
+        try:
+            parts = Path(path).relative_to(root).parts
+        except ValueError:
+            return Path(path).parent.name or "Clips"
+        if len(parts) <= 1:
+            return "Clips"
+        if parts[0] in ("clips", "ready"):
+            if len(parts) >= 3:
+                return parts[1]
+            return "Clips" if parts[0] == "clips" else "Sessions"
+        return parts[0]
 
     def _cover(self, clip):
         """The cover ClipForge wrote beside a clip, shrunk once and kept for the list."""

@@ -171,6 +171,21 @@
   .reasons [data-reason] kbd { color: #5a2f2f; border-color: #d79c9c; }
   /* Watching a clip happens in the window now: the cover is the button, and the player
      opens over the page so judging keys still reach it. */
+  /* Verdict filters under the search box, and the batches the clips came from. */
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); background: #17181c; }
+  .pill-btn { height: 24px; padding: 0 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--field); color: var(--muted);
+    font-size: 11.5px; cursor: pointer; }
+  .pill-btn:hover { background: #2b2c33; color: var(--fg); }
+  .pill-btn[aria-pressed="true"] { background: #223028; border-color: #2e4638; color: #8fe0a8; }
+  .group { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: #16171b; border-bottom: 1px solid var(--line); font-size: 11.5px;
+    color: var(--muted); cursor: pointer; position: sticky; top: 0; z-index: 1; }
+  .group:hover { background: #1b1c21; }
+  .group .chev { color: var(--faint); width: 10px; }
+  .group .gname { color: var(--fg); font-weight: 600; }
+  .group .ghint { margin-left: auto; color: var(--faint); }
   /* Cover, name, score, verdict: the mockup's grid still carried a number column. */
   @media (min-width: 861px) {
     .clip { grid-template-columns: 74px 1fr 62px 92px; }
@@ -255,6 +270,8 @@ const state = {
   running: false,
   per_clip: null,
   thumbs: {},
+  verdictFilter: "all",
+  open: new Set(),
 };
 
 let api = null;
@@ -583,13 +600,47 @@ function judgeView() {
         <input type="text" id="filter" placeholder="Search clips" value="${esc(state.filter)}">
         <span class="hint">${kept} kept · ${maybes} maybe · ${rejected} rejected · ${state.clips.length - kept - maybes - rejected} to go</span>
       </div>
+      <div class="filters" id="filters">
+        ${[["all", "All"], ["none", "Not yet judged"], ["keep", "Kept"],
+           ["maybe", "Maybe"], ["reject", "Rejected"]].map(([value, label]) =>
+          `<button class="pill-btn" data-filter="${value}" aria-pressed="${state.verdictFilter === value}">${label}</button>`).join("")}
+      </div>
       <div id="rows"></div>
     </section>`);
 
   const box = list.querySelector("#rows");
   const empty = el('<div class="empty" hidden>No clip matches that.</div>');
   box.append(empty);
+
+  const groups = new Map();
   state.clips.forEach((row) => {
+    const key = row.source || "Clips";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  const order = Array.from(groups.keys()).sort((a, b) => {
+    const newest = (name) => Math.max(...groups.get(name).map((row) => row.added || 0));
+    return newest(b) - newest(a);
+  });
+  if (!state.open.size && order.length) state.open.add(order[0]);
+  const chosen = state.clips[state.selected];
+  if (chosen) state.open.add(chosen.source || "Clips");
+
+  order.forEach((source) => {
+    const members = groups.get(source);
+    const head = el(`
+      <div class="group" data-source="${esc(source)}">
+        <span class="chev">${state.open.has(source) ? "▾" : "▸"}</span>
+        <span class="gname">${esc(source)}</span>
+        <span class="ghint"></span>
+      </div>`);
+    head.addEventListener("click", () => {
+      if (state.open.has(source)) state.open.delete(source);
+      else state.open.add(source);
+      setView("judge");
+    });
+    box.append(head);
+    members.forEach((row) => {
     const index = state.clips.indexOf(row);
     const name = row.path.split("\\").pop();
     const rowEl = el(`
@@ -614,7 +665,9 @@ function judgeView() {
       setView("judge");
       openViewer();
     });
+    rowEl.dataset.source = source;
     box.append(rowEl);
+    });
   });
 
   const reasons = state.info ? state.info.reasons : [];
@@ -647,12 +700,28 @@ function judgeView() {
 
   const filter = list.querySelector("#filter");
   const narrow = () => {
+    const needle = state.filter.toLowerCase().trim();
+    const want = state.verdictFilter;
     let shown = 0;
     box.querySelectorAll(".clip").forEach((node) => {
-      const hit = !state.filter.toLowerCase().trim() ||
-                  node.dataset.search.includes(state.filter.toLowerCase().trim());
-      node.hidden = !hit;
-      if (hit) shown += 1;
+      const row = state.clips[Number(node.dataset.index)];
+      const inOpenGroup = state.open.has(node.dataset.source);
+      const verdictOk = want === "all" || (want === "none" ? !row.verdict : row.verdict === want);
+      const searchOk = !needle || node.dataset.search.includes(needle);
+      node.hidden = !(inOpenGroup && verdictOk && searchOk);
+      if (!node.hidden) shown += 1;
+    });
+    box.querySelectorAll(".group").forEach((head) => {
+      const source = head.dataset.source;
+      const members = Array.from(box.querySelectorAll(".clip"))
+        .filter((node) => node.dataset.source === source);
+      const visible = members.filter((node) => !node.hidden).length;
+      const open = state.open.has(source);
+      head.querySelector(".chev").textContent = open ? "▾" : "▸";
+      head.querySelector(".ghint").textContent =
+        `${members.length} clip${members.length === 1 ? "" : "s"}` +
+        (open ? "" : ` · ${visible} shown`);
+      head.hidden = open ? visible === 0 && members.length > 0 : false;
     });
     empty.hidden = shown > 0;
   };
@@ -660,6 +729,13 @@ function judgeView() {
     state.filter = event.target.value;
     narrow();
   });
+  list.querySelectorAll("[data-filter]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.verdictFilter = button.dataset.filter;
+      list.querySelectorAll("[data-filter]").forEach((other) =>
+        other.setAttribute("aria-pressed", String(other.dataset.filter === state.verdictFilter)));
+      narrow();
+    }));
   narrow();
   side.querySelector("#watch").addEventListener("click", () => openViewer());
   side.querySelectorAll("[data-verdict]").forEach((b) =>
@@ -704,6 +780,7 @@ async function submit(verdict, reason) {
   if (after !== -1) state.selected = after;
   else if (first !== -1) state.selected = first;
   else state.selected = Math.min(state.selected, state.clips.length - 1);
+  if (state.clips[state.selected]) state.open.add(state.clips[state.selected].source || "Clips");
   const left = state.clips.filter((item) => !item.verdict).length;
   document.getElementById("nav-left").textContent = left ? left : "";
   setView("judge");
