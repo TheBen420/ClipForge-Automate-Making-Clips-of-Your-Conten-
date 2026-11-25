@@ -163,6 +163,12 @@
   /* A real cover replaces the mockup's gradient placeholder. */
   .thumb.has-cover { background-size: cover; background-position: center; }
   .thumb.has-cover::after { display: none; }
+  /* A rejection is the one verdict that needs no second look, so the reasons say so. */
+  .reasons-label { font-size: 11px; color: var(--faint); text-transform: uppercase;
+    letter-spacing: .4px; margin: 12px 0 6px; }
+  .reasons [data-reason] { background: #f2c2c2; border-color: #dda6a6; color: #14100f; }
+  .reasons [data-reason]:hover { background: #eeb2b2; }
+  .reasons [data-reason] kbd { color: #5a2f2f; border-color: #d79c9c; }
 </style>
 </head>
 <body>
@@ -581,7 +587,8 @@ function judgeView() {
           <button class="btn sm primary" data-verdict="keep">Keep <kbd>k</kbd></button>
           <button class="btn sm" data-verdict="maybe">Maybe <kbd>m</kbd></button>
         </div>
-        <div class="reasons" style="margin-top:10px">
+        <div class="reasons-label">Reject Clip:</div>
+        <div class="reasons">
           ${reasons.map((reason) => `<button class="btn sm" data-reason="${esc(reason)}">${esc(reason)} <kbd>${keys[reason] || ""}</kbd></button>`).join("")}
         </div>
         <p class="hint" style="margin:10px 0 0">boring and wrong moment blame the signals. late start, cut short and bad edit blame the window.</p>
