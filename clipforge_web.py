@@ -520,7 +520,7 @@ def run():
 
     _claim_taskbar()
     api = Api()
-    window = webview.create_window("ClipForge", str(UI), js_api=api, width=1180, height=800,
+    window = webview.create_window("ClipForge", str(UI), js_api=api, width=1357, height=920,
                                    min_size=(960, 640), background_color="#131316")
     api._window = window
     webview.start(gui="edgechromium", debug=False)

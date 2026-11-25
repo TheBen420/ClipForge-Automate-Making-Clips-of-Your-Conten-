@@ -182,6 +182,13 @@
   .viewer-bar { display: flex; align-items: center; gap: 14px; width: 100%; color: var(--fg); }
   .viewer-bar .name { font-size: 12px; color: var(--muted); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
+  @media (min-width: 861px) {
+    .clip { grid-template-columns: 26px 24px 74px 1fr 62px 92px; }
+  }
+  .clip .play { width: 22px; height: 22px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--line); background: #23242b; color: var(--muted);
+    font-size: 9px; line-height: 1; display: grid; place-items: center; cursor: pointer; }
+  .clip .play:hover { background: var(--accent); border-color: transparent; color: #0c1a10; }
   .viewer video { max-height: 76vh; max-width: 84vw; border-radius: 10px;
     border: 1px solid var(--line); background: #000; }
 </style>
@@ -591,6 +598,7 @@ function judgeView() {
     const rowEl = el(`
       <div class="clip" role="option" aria-selected="${index === state.selected}" data-index="${index}">
         <span class="score" style="text-align:left">${index + 1}</span>
+        <button class="play" data-play="${index}" title="Preview this clip">&#9654;</button>
         <div class="thumb" data-index="${index}"></div>
         <div>
           <div class="name">${esc(name)}</div>
@@ -603,7 +611,13 @@ function judgeView() {
     rowEl.hidden = !clipMatches(row);
     rowEl.addEventListener("click", () => { state.selected = index; setView("judge"); });
     if (index === state.selected) rowEl.id = "current-clip";
-    rowEl.addEventListener("dblclick", () => api.open_path(row.path));
+    rowEl.addEventListener("dblclick", () => openViewer());
+    rowEl.querySelector(".play").addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.selected = index;
+      setView("judge");
+      openViewer();
+    });
     const thumb = rowEl.querySelector(".thumb");
     thumb.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -675,6 +689,7 @@ async function openViewer() {
   const video = document.getElementById("viewer-video");
   document.getElementById("viewer-name").textContent = row.path.split("\\").pop();
   if (video.src !== shown.url) {
+    video.volume = 0.2;
     video.src = shown.url;
     video.play().catch(() => {});
   }
