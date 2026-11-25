@@ -126,6 +126,7 @@ class App:
         self.review_records = []
         self.vod_info = None
         self.cfg = cf.load_config()
+        self.config_notices = list(cf.CONFIG_NOTICES)
         self.ready_root = cf.media_root(self.cfg) / "ready"
         self.clips_root = cf.media_root(self.cfg) / "clips"
         self.run_dir = None
@@ -177,6 +178,8 @@ class App:
         self.build_review(outer)
         self.build_log(outer)
 
+        for notice in self.config_notices:
+            self.queue.put(("log", f"  ({notice})\n"))
         self.check_environment()
         self.root.after(120, self.drain)
 
@@ -987,7 +990,16 @@ def main():
     except Exception:  # noqa: BLE001 - not fatal, just crisper text when it works
         pass
     root = tk.Tk()
-    app = App(root)
+    try:
+        app = App(root)
+    except cf.Fail as exc:
+        from tkinter import messagebox
+
+        root.withdraw()
+        messagebox.showerror("ClipForge", f"{exc}\n\nFix that value in\n{cf.CONFIG_PATH}\n\n"
+                                          "or delete the file to start from the defaults.")
+        root.destroy()
+        return 1
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if arg.lower().startswith("http"):

@@ -229,7 +229,7 @@ What actually helps:
 
 ### Parallel rendering, if you edit the file
 
-One clip is rendered at a time and that is the only setting the app exposes, because two renders at once measured 92% CPU against 31% for one to save 4% of the wall clock. The knob still exists for anyone who wants it, and it is deliberately not in the window:
+One clip is rendered at a time, and that is not a setting the window offers at all: two renders at once measured 92% CPU against 31% for one, to save 4% of the wall clock. The capability still exists for anyone who wants it by hand, and it lives only in the config file:
 
 ```json
 {
@@ -240,7 +240,7 @@ One clip is rendered at a time and that is the only setting the app exposes, bec
 
 Both keys mean the same thing — how many clips or recordings are worked on at once — and both are read only from `config.json`, so changing `2` to `1` or `1` to `2` there and restarting is the whole procedure. Nothing in the interface writes these values, so a hand edit survives every later save of the other settings.
 
-**The cap at 2 is a failsafe, not a suggestion.** This is a young program with an unproven scheduler, and a render is already using every core of the machine; three or four at once on a stock cooler is how you turn a fan curve into a thermal shutdown, and on a laptop it is how you turn one batch into a throttled, corrupted-length render. So values above 2 are held at 2 with a line in the log saying so, `0`, negative numbers and junk fall back to 1, and a non-numeric value is refused outright rather than guessed at. You cannot configure this into harming the machine.
+**The cap at 2 is a failsafe, not a suggestion.** This is a young program with an unproven scheduler, and a render is already using every core of the machine; three or four at once on a stock cooler is how you turn a fan curve into a thermal shutdown, and on a laptop it is how you turn one batch into a throttled, corrupted-length render. So a value above 2 is held at 2, with a line in the log naming what you asked for. Numbers below 1 are read as 1, decimals are rounded down. A value that isn't a number at all — `"a few"`, `null` — stops the program with a message naming the line to fix, rather than guessing at a number on your behalf. You cannot configure this into harming the machine.
 
 ## Captions: accuracy and timing
 

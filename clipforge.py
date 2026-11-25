@@ -83,6 +83,7 @@ DEFAULT_CONFIG = {
 CONFIG_MIGRATIONS = {2: lambda cfg: cfg.update({"workers": 1, "render_workers": 1})}
 
 AUDIO_RATE = 16000
+CONFIG_NOTICES = []  # what load_config had to hold back, so a window can show it too
 MAX_WORKERS = 2  # deliberately capped: a single render already saturates the CPU
 # whisper holds one model on the GPU: reuse it, and let only one thread drive it
 _MODEL_CACHE = {}
@@ -121,9 +122,12 @@ def load_config():
         cfg[key], asked = safe_worker_count(cfg.get(key))
         if asked:
             capped.append(f"{key} {asked}")
+    del CONFIG_NOTICES[:]
     if capped:
-        print(f"  ({' and '.join(capped)} in config.json - held at {MAX_WORKERS}, the cap that "
-              f"keeps a batch from pinning every core)")
+        notice = (f"{' and '.join(capped)} in config.json - held at {MAX_WORKERS}, the cap "
+                  f"that keeps a batch from pinning every core")
+        CONFIG_NOTICES.append(notice)
+        print(f"  ({notice})")
     return cfg
 
 
@@ -756,7 +760,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
