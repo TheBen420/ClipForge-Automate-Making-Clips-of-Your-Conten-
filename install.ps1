@@ -2,7 +2,8 @@ param(
     [switch]$NoShortcut,
     [switch]$DryRun,
     [switch]$NoPause,
-    [string]$ShortcutDir
+    [string]$ShortcutDir,
+    [string]$InstallDir
 )
 
 $ErrorActionPreference = "Continue"
@@ -57,6 +58,26 @@ Say "  -------------------------------"
 Say "  This puts everything ClipForge needs on this PC."
 Say "  It takes about three minutes and needs internet."
 if ($DryRun) { Note "Dry run: nothing will be installed." }
+
+# Keep the real copy somewhere the user won't tidy away by accident, so the desktop
+# shortcut never points at a Downloads folder that gets emptied. Copies in place rather
+# than re-running this script, which would recurse.
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "ClipForge" }
+$here = (Resolve-Path $root).Path
+$target = (Resolve-Path -LiteralPath $InstallDir -ErrorAction SilentlyContinue).Path
+if ($target -ne $here) {
+    if ($DryRun) {
+        Note "Would copy ClipForge to $InstallDir and carry on from there."
+    } else {
+        Say "  Copying ClipForge to $InstallDir"
+        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+        Get-ChildItem -LiteralPath $root -Force |
+            Where-Object { $_.Name -ne ".venv" } |
+            Copy-Item -Destination $InstallDir -Recurse -Force
+        $root = (Resolve-Path -LiteralPath $InstallDir).Path
+        Set-Location $root
+    }
+}
 
 # ---------------------------------------------------------------- python
 Head "1 of 4   Checking for Python"
