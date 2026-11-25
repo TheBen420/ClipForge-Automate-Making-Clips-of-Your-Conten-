@@ -147,6 +147,9 @@
      to the list's height and the whole window scrolled, so the panel is allowed to shrink and
      the body scrolls inside it, as the mockup intends. */
   .app, .panel, .body { min-height: 0; }
+  /* The vocabulary box holds a comma-separated list of names, so it gets room the mockup's
+     single-line field did not allow for; nothing else in the card moves. */
+  #vocabulary { width: 420px; max-width: 100%; }
 </style>
 </head>
 <body>
@@ -325,7 +328,7 @@ function makeView() {
         </div>
         <div class="row">
           <div class="field grow">
-            <label>Vocabulary <span class="hint">· names it keeps mis-hearing</span></label>
+            <label>Vocabulary <span class="hint">· words it keeps mis-hearing</span></label>
             <input type="text" id="vocabulary" value="${esc(s.vocabulary)}">
           </div>
         </div>
