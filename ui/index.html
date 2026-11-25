@@ -604,6 +604,9 @@ const clipSearch = (row) =>
 
 const clipMatches = (row) => {
   const needle = state.filter.toLowerCase().trim();
+  const want = state.verdictFilter;
+  const verdictOk = want === "all" || (want === "none" ? !row.verdict : row.verdict === want);
+  if (!verdictOk) return false;
   return !needle || clipSearch(row).includes(needle);
 };
 
@@ -734,14 +737,14 @@ function judgeView() {
   const filter = list.querySelector("#filter");
   const narrow = () => {
     const needle = state.filter.toLowerCase().trim();
-    const want = state.verdictFilter;
+    // A filter or a search is a question about the whole library, so it ignores which
+    // batches happen to be open: every match is shown, under its own heading.
+    const reaching = state.verdictFilter !== "all" || !!needle;
     let shown = 0;
     box.querySelectorAll(".clip").forEach((node) => {
       const row = state.clips[Number(node.dataset.index)];
-      const inOpenGroup = state.open.has(node.dataset.source);
-      const verdictOk = want === "all" || (want === "none" ? !row.verdict : row.verdict === want);
-      const searchOk = !needle || node.dataset.search.includes(needle);
-      node.hidden = !(inOpenGroup && verdictOk && searchOk);
+      const inOpenGroup = reaching || state.open.has(node.dataset.source);
+      node.hidden = !(inOpenGroup && clipMatches(row));
       if (!node.hidden) shown += 1;
     });
     box.querySelectorAll(".group").forEach((head) => {
@@ -749,12 +752,13 @@ function judgeView() {
       const members = Array.from(box.querySelectorAll(".clip"))
         .filter((node) => node.dataset.source === source);
       const visible = members.filter((node) => !node.hidden).length;
-      const open = state.open.has(source);
+      const open = reaching || state.open.has(source);
       head.querySelector(".chev").textContent = open ? "▾" : "▸";
       head.querySelector(".ghint").textContent =
         `${members.length} clip${members.length === 1 ? "" : "s"}` +
-        (open ? "" : ` · ${visible} shown`);
-      head.hidden = open ? visible === 0 && members.length > 0 : false;
+        (reaching || open ? (reaching && visible !== members.length ? ` · ${visible} shown` : "")
+                          : ` · ${visible} shown`);
+      head.hidden = reaching ? visible === 0 : (open ? visible === 0 && members.length > 0 : false);
     });
     empty.hidden = shown > 0;
   };
