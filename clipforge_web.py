@@ -125,6 +125,14 @@ class Api:
             "presets": list((self.cfg.get("presets") or {}).keys()),
         }
 
+    def logo(self):
+        """The app's own icon, for the brand mark at the top of the rail."""
+        icon = TOOL_DIR / "icon.png"
+        try:
+            return {"data": "data:image/png;base64," + base64.b64encode(icon.read_bytes()).decode("ascii")}
+        except OSError:
+            return {"data": ""}
+
     def hardware(self):
         """Which encoder and device this machine will use.
 

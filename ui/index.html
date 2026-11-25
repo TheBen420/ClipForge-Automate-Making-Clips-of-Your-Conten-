@@ -185,6 +185,9 @@
     font-size: 11.5px; cursor: pointer; }
   .pill-btn:hover { background: #2b2c33; color: var(--fg); }
   .pill-btn[aria-pressed="true"] { background: #223028; border-color: #2e4638; color: #8fe0a8; }
+  /* The brand mark is the app's own logo; logo.png is copied beside the page at launch. */
+  .brand .logo { background: none; padding: 0; overflow: hidden; }
+  .brand .logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
   /* Not sticky: a pinned heading slid over the clip rows as the list scrolled, so the row
      you were on disappeared underneath it. Headings scroll with their batches instead. */
   .group { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -217,7 +220,7 @@
 <div class="app">
   <aside class="rail">
     <div class="brand">
-      <div class="logo">CF</div>
+      <div class="logo"><img id="brand-logo" src="" alt=""></div>
       <div><strong>ClipForge</strong><span id="rail-version">0.4.0</span></div>
     </div>
     <button class="nav" data-view="make" aria-selected="true">
@@ -292,6 +295,13 @@ function boot() {
   if (api) return;
   api = window.pywebview && window.pywebview.api;
   if (!api) return;
+  api.logo().then((logo) => {
+    if (logo.data) {
+      const img = document.getElementById("brand-logo");
+      img.src = logo.data;
+      img.parentElement.classList.add("has-logo");
+    }
+  });
   api.hello().then((info) => {
     state.info = info;
     document.getElementById("rail-version").textContent = info.version;
