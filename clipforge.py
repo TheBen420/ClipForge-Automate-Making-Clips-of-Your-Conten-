@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.6.5"
+VERSION = "0.6.6"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -955,9 +955,11 @@ def overlaps_past(start, end, spans, share=0.5):
     return False
 
 
-def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_words=0, avoid=None):
+def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_words=0, avoid=None,
+            length=None):
     """Score candidate windows from every signal available, returning ranked moments.
 
+    With length, windows are that many seconds long instead of a quarter-minute by default.
     With min_words, windows carrying less speech than that are passed over, which keeps
     captioned clips from landing on a stretch where nobody is talking. With avoid, a list
     of (start, end) spans already clipped, those windows are passed over too - so running
@@ -1034,7 +1036,7 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
     smooth = max(1, int(3 / bucket))
     combined = np.convolve(combined, np.ones(smooth) / smooth, mode="same")
 
-    win = min(24.0, max(min_len, total * 0.55))
+    win = float(length) if length else min(24.0, max(min_len, total * 0.55))
     hop = max(1.5, win / 8)
     edge = min(float(cfg.get("skip_edges", 60)), total * 0.1)
     usable_start = edge

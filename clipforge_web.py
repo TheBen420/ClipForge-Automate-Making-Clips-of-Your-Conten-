@@ -375,12 +375,15 @@ class Api:
     def _analyze(self, entry, meta, data, payload):
         self.status = "Scoring every signal…"
         self.say("  scoring")
-        ranked, summary = cf.analyze(self.cfg, entry, meta, data,
-                                     preset=None if payload.get("preset") in (None, "auto")
-                                     else payload["preset"],
+        preset = None if payload.get("preset") in (None, "auto") else payload["preset"]
+        length = int(payload.get("length") or 0) or None
+        if preset:
+            length = (self.cfg.get("presets") or {}).get(preset, {}).get("length") or length
+        ranked, summary = cf.analyze(self.cfg, entry, meta, data, preset=preset,
                                      want=int(payload.get("count", 2)) * 2,
                                      min_words=cf.min_caption_words(payload.get("captions")),
-                                     avoid=cf.past_windows(self.cfg, entry.name))
+                                     avoid=cf.past_windows(self.cfg, entry.name),
+                                     length=length)
         note = cf.used_up_note(summary)
         if note:
             self.say(f"  {note}")
