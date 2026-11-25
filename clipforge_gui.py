@@ -385,7 +385,8 @@ class App:
         if not rows:
             messagebox.showinfo("ClipForge", "Every clip on disk has been judged already.")
             return
-        open_review_window(self.cfg, rows, target, root=self.root)
+        open_review_window(self.cfg, rows, target, root=self.root,
+                          name=Path(str(target)).name if records else "unjudged on disk")
 
     def check_update(self):
         """Ask GitHub which build is published, every launch, and say so either way."""
@@ -852,13 +853,14 @@ class App:
             pass
 
 
-def open_review_window(cfg, records, target, root=None):
+def open_review_window(cfg, records, target, root=None, name=None):
     """Judge a finished run, so a closed app never costs you the feedback."""
     own_root = root is None
     window = tk.Tk() if own_root else tk.Toplevel(root)
     apply_dark_styles(window)
     apply_icon(window)
-    window.title("ClipForge - judge clips")
+    window.title(f"ClipForge - judge clips: {name}" if name
+                 else "ClipForge - judge clips")
     window.configure(bg=BG)
     window.geometry("760x420")
 
