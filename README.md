@@ -8,15 +8,30 @@ Turns a livestream recording (or a VOD link) into vertical, captioned, post-read
 
 ## Install
 
-Prerequisites: Python 3.10+, and ffmpeg on the PATH (`winget install Gyan.FFmpeg` on Windows). Nothing else is assumed about the machine - no NVIDIA card, no specific encoder, no font.
+### Windows, without touching a command line
+
+1. **[Download ClipForge](https://github.com/TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-/archive/refs/heads/main.zip)**, then right-click the zip and choose **Extract All**.
+2. Open the extracted folder and double-click **Install ClipForge**.
+3. Wait about three minutes. It fetches Python and ffmpeg if the machine doesn't have them, installs what ClipForge needs, checks the PC can actually render video, and puts **ClipForge** on the desktop.
+4. Double-click **ClipForge** on the desktop.
+
+Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn't one. Windows may warn that the file came from the internet: **More info → Run anyway**. Everything it installs is either from Microsoft's own package manager (winget) or from python.org.
+
+### Any machine, from a terminal
+
+This is what that installer does by hand, and the only supported path on macOS and Linux.
 
 ```
-git clone <your-fork-url> clipforge
-cd clipforge
+git clone https://github.com/TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-.git
+cd ClipForge-Automate-Making-Clips-of-Your-Conten-
+py -m venv .venv
+.venv\Scripts\activate          # macOS and Linux: source .venv/bin/activate
 pip install -r requirements.txt
-py clipforge.py doctor      # proves ffmpeg, an H.264 encoder, whisper, yt-dlp, and the disk
-py clipforge_gui.py         # the desktop app
+py clipforge.py doctor           # proves ffmpeg, an H.264 encoder, whisper, yt-dlp and the disk
+py clipforge_gui.py              # the desktop app
 ```
+
+ffmpeg has to be on the PATH for this route (`winget install Gyan.FFmpeg` on Windows, `brew install ffmpeg` on macOS, `apt install ffmpeg` on Linux). Python 3.10 or newer. Nothing else is assumed about the machine - no NVIDIA card, no specific encoder, no font.
 
 The first run writes `config.json` next to the script with sensible defaults and creates `D:\ClipForge` for the library, clips and session logs (change `media_root` in that file to move it). `config.json` is deliberately git-ignored: it holds machine paths and your own tuning, and the defaults live in `DEFAULT_CONFIG` inside `clipforge.py`. Optional: `cf.cmd` is a one-line shim for putting `cf` on the PATH; the desktop shortcut is `pythonw clipforge_gui.py`.
 
