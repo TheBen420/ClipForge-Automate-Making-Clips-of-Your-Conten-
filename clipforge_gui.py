@@ -716,6 +716,9 @@ class App:
                                      preset=opts.get("preset"), want=opts["count"] * 2,
                                      min_words=cf.min_caption_words(opts.get("captions")),
                                      avoid=cf.past_windows(self.cfg, entry.name))
+        note = cf.used_up_note(summary)
+        if note:
+            self.queue.put(("log", f"  {note}\n"))
         ns = argparse.Namespace(fit=opts["fit"], captions=opts["captions"], caps=False,
                                 focus=0.5, fps=opts.get("fps"), pad=0.2, snap=True, open=False)
         picks = ranked[: opts["count"]]
@@ -761,6 +764,9 @@ class App:
                                      preset=opts.get("preset"), want=opts["count"] * 2,
                                      min_words=cf.min_caption_words(opts.get("captions")),
                                      avoid=cf.past_windows(self.cfg, entry.name))
+        note = cf.used_up_note(summary)
+        if note:
+            self.queue.put(("log", f"  {note}\n"))
         if not ranked:
             self.queue.put(("error", "No candidate moments found in this VOD."))
             return

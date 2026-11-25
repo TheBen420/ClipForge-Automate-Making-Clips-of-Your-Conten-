@@ -141,6 +141,8 @@ Weights live in `config.json` under `weights`. Three presets ship with it — `b
 
 For a Twitch VOD, tick **Use Twitch chat hype** and it pulls the chat replay first — chat spikes are the most reliable "something happened" signal on a quiet stream. `cf chat <name> --file chat.json` imports a chat log you already have.
 
+Running the same footage again skips windows already clipped, so a second run hands back new moments instead of the same clip. That has a limit worth knowing: once a recording's good stretches are taken, what's left scores lower, and the run says so — "the strongest moment still untouched scores 2.99 while one already clipped here scores 4.29: this recording's best moments are used up" — rather than quietly handing you filler. A fresh recording, or a longer one, is the answer at that point.
+
 The replay is read a hundred messages at a time, each request asking Twitch for the next hundred after a timestamp. Their cursor API now fails an integrity check for anonymous clients, so the offset form is the one that works; a busy three-hour VOD is about 11,000 messages in well under a minute. Twitch only hands back what it kept, though: a VOD whose chat never got going has a handful of messages, so anything under five is refused with the count and the run ranks on the other signals instead.
 
 ## Judging clips, and what the numbers mean

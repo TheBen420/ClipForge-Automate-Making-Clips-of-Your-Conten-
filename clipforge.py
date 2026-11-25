@@ -735,7 +735,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1037,6 +1037,7 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
 
     candidates.sort(key=lambda c: -c["score"])
     results, taken = [], []
+    blocked = None
     for candidate in candidates:
         if candidate["peak"] > total - min_len:
             continue
@@ -1044,6 +1045,7 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
         if min_words and words_between(start, end) < min_words:
             continue
         if avoid and overlaps_past(start, end, avoid):
+            blocked = max(blocked or 0.0, candidate["score"])
             continue
         if end - start < min_len * 0.5:
             continue
@@ -1075,6 +1077,9 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
 
     summary = {"total": round(total, 1), "candidates": len(candidates), "window": round(win, 1),
                "weights": {name: round(float(weight), 3) for name, weight in merged.items()}}
+    if blocked is not None:
+        summary["used_up"] = {"best_new": round(results[0]["score"], 3) if results else None,
+                              "best_skipped": round(blocked, 3)}
     if learned:
         summary["learned"] = learned
     for name, values in features_all.items():
@@ -1083,6 +1088,16 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
                              "max": round(float(values.max()), 3),
                              "separation": round(float(values.max() / (abs(np.median(values)) or 1)), 2)}
     return results, summary
+
+
+def used_up_note(summary):
+    """A line of plain warning when the only strong moments left are ones already clipped."""
+    used = summary.get("used_up") or {}
+    kept, skipped = used.get("best_new"), used.get("best_skipped")
+    if not kept or not skipped or skipped < kept * 1.25:
+        return None
+    return (f"the strongest moment still untouched scores {kept:.2f} while one already "
+            f"clipped here scores {skipped:.2f}: this recording's best moments are used up")
 
 
 def score_windows(entry, data, cfg, meta=None, preset=None, want=12):
