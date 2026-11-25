@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -2182,6 +2182,30 @@ def latest_session(cfg):
     folder = sessions_dir(cfg)
     files = sorted(folder.glob("*.json"))
     return files[-1] if files else None
+
+
+def unjudged_clips(cfg):
+    """Every clip on disk that has no judgement yet, newest folder last.
+
+    Old runs are still worth judging: a clip's verdict teaches the weighting whether it
+    was made today or a fortnight ago, and the reasons only get recorded if the clips are
+    offered again.
+    """
+    judged = {str(row.get("clip") or "") for row in load_feedback(cfg)}
+    rows = []
+    for folder in ("clips", "ready"):
+        root = media_root(cfg) / folder
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*.mp4")):
+            if str(path) in judged:
+                continue
+            try:
+                duration = round(probe(cfg, path)["duration"], 1)
+            except (Fail, ValueError, KeyError):
+                duration = None
+            rows.append({"path": str(path), "entry": None, "duration": duration})
+    return rows
 
 
 def review_records(cfg, target=None):

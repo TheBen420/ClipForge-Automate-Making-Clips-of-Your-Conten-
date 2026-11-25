@@ -123,7 +123,6 @@ class App:
         self.stop = threading.Event()
         self.running = False
         self.clips_made = []
-        self.review_records = []
         self.vod_info = None
         self.cfg = cf.load_config()
         self.config_notices = list(cf.CONFIG_NOTICES)
@@ -175,7 +174,6 @@ class App:
         self.build_options(outer)
         self.build_destination(outer)
         self.build_actions(outer)
-        self.build_review(outer)
         self.build_log(outer)
 
         for notice in self.config_notices:
@@ -327,6 +325,10 @@ class App:
         self.open_btn = ttk.Button(actions, text="Open clips folder", command=self.open_output,
                                    state="disabled")
         self.open_btn.pack(side="right")
+        ttk.Button(actions, text="Judge clips", command=self.open_judge).pack(side="right",
+                                                                             padx=(0, 8))
+        ttk.Button(actions, text="Selection stats", command=self.show_stats).pack(side="right",
+                                                                                  padx=(0, 8))
 
         self.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
         self.progress.pack(fill="x", pady=(2, 6))
@@ -365,76 +367,23 @@ class App:
         if preset.get("length"):
             self.length_var.set(str(int(preset["length"])))
 
-    def build_review(self, parent):
-        self.review_frame = ttk.Frame(parent)
-        head = ttk.Frame(self.review_frame)
-        head.pack(fill="x")
-        ttk.Label(head, text="Judge the clips - kept vs rejected teaches the weighting",
-                  style="Muted.TLabel").pack(side="left")
-        self.review_stats_btn = ttk.Button(head, text="Show selection stats",
-                                          command=self.show_stats)
-        self.review_stats_btn.pack(side="right")
-        self.review_past_btn = ttk.Button(head, text="Judge last run",
-                                         command=self.review_past)
-        self.review_past_btn.pack(side="right", padx=(0, 6))
-
-        body = ttk.Frame(self.review_frame)
-        body.pack(fill="x", pady=(4, 0))
-        self.review_list = tk.Listbox(body, height=4, bg="#141417", fg="#c9c9d1",
-                                      selectbackground="#34343c", selectforeground="#ffffff",
-                                      relief="flat", font=("Consolas", 9), activestyle="none",
-                                      highlightthickness=1, highlightbackground="#2a2a30")
-        self.review_list.pack(side="left", fill="x", expand=True)
-        buttons = ttk.Frame(body)
-        buttons.pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="Keep", command=lambda: self.judge("keep")).pack(fill="x")
-        ttk.Button(buttons, text="Borderline", command=lambda: self.judge("maybe")).pack(
-            fill="x", pady=(6, 0))
-        reasons = ttk.Frame(body)
-        reasons.pack(side="left", padx=(8, 0))
-        ttk.Label(reasons, text="Reject because", style="Muted.TLabel").pack(anchor="w")
-        for reason in cf.REJECT_REASONS:
-            ttk.Button(reasons, text=reason, width=14,
-                       command=lambda r=reason: self.judge("reject", r)).pack(fill="x", pady=(4, 0))
-
-    def show_review(self, records):
-        """Surface the clips of this run so a keep or reject is one click."""
-        if not records:
-            return
-        self.review_records.extend(records)
-        for record in records:
-            self.review_list.insert("end", f"unjudged  {Path(record['path']).name}")
-        if not self.review_frame.winfo_ismapped():
-            self.review_frame.pack(fill="x", pady=(10, 0), before=self.log)
-        self.status_var.set(f"{len(self.clips_made)} clip(s) ready - judge them below, "
-                            "or open the folder.")
-
-    def judge(self, verdict, reason=None):
-        selection = self.review_list.curselection()
-        if not selection:
-            return
-        index = int(selection[0])
-        record = self.review_records[index]
-        if record.get("verdict"):
-            return
-        cf.record_feedback(self.cfg, record["path"], verdict, record, reason=reason)
-        record["verdict"] = verdict
-        record["reason"] = reason
-        mark = {"keep": "kept   ", "maybe": "maybe  "}.get(verdict, "rejected")
-        if reason:
-            mark = f"{mark} {reason[:10]:<10}"
-        name = Path(record["path"]).name
-        self.review_list.delete(index)
-        self.review_list.insert(index, f"{mark} {name}")
-        self.review_list.selection_set(index)
-        self.write_line(f"{mark}: {name}")
-
-    def review_past(self):
-        """Judge a run whose clips are already on disk."""
-        try:
-            rows, target = cf.review_records(self.cfg)
-        except cf.Fail as exc:
-            messagebox.showinfo("ClipForge", str(exc))
+    def open_judge(self, records=None):
+        """Judge clips in the dedicated window, never in this one."""
+        if records:
+            rows, target = list(records), self.run_dir or ""
+        else:
+            try:
+                rows = cf.unjudged_clips(self.cfg)
+                if not rows:
+                    rows, target = cf.review_records(self.cfg)
+                    target = str(target)
+                else:
+                    target = f"{len(rows)} clip(s) never judged, in {cf.media_root(self.cfg)}"
+            except cf.Fail as exc:
+                messagebox.showinfo("ClipForge", str(exc))
+                return
+        if not rows:
+            messagebox.showinfo("ClipForge", "Every clip on disk has been judged already.")
             return
         open_review_window(self.cfg, rows, target, root=self.root)
 
@@ -872,7 +821,7 @@ class App:
                 elif kind == "vod_loaded":
                     self.load_btn.state(["!disabled"])
                 elif kind == "review":
-                    self.show_review(payload)
+                    self.open_judge(payload)
                 elif kind == "version":
                     latest, newer = payload
                     self.version_label.configure(text=f"v{cf.VERSION}  ·  latest {latest}")
