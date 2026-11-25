@@ -90,6 +90,39 @@ def apply_dark_styles(root):
     root.option_add("*TCombobox*Listbox.font", "{Segoe UI} 10")
 
 
+class ScrollFrame(tk.Frame):
+    """A tall panel that scrolls, so a small screen cannot hide a control."""
+
+    def __init__(self, parent, bg=BG):
+        super().__init__(parent, bg=bg)
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
+        bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.body = tk.Frame(self.canvas, bg=bg)
+        self.window = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self.canvas.configure(yscrollcommand=bar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        self.body.bind("<Configure>", self._on_body)
+        self.canvas.bind("<Configure>", self._on_canvas)
+        self.canvas.bind("<Enter>", lambda _e: self._wheel(True))
+        self.canvas.bind("<Leave>", lambda _e: self._wheel(False))
+
+    def _on_body(self, _event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas(self, event):
+        self.canvas.itemconfigure(self.window, width=event.width)
+
+    def _wheel(self, on):
+        if on:
+            self.canvas.bind_all("<MouseWheel>", self._scroll)
+        else:
+            self.canvas.unbind_all("<MouseWheel>")
+
+    def _scroll(self, event):
+        self.canvas.yview_scroll(int(-event.delta / 120), "units")
+
+
 class StreamToQueue:
     """Sends pipeline print() output to the GUI log instead of a console."""
 
@@ -149,8 +182,10 @@ class App:
         self.run_dir = None
         root.title("ClipForge")
         apply_icon(root)
-        root.geometry("1080x950")
-        root.minsize(980, 740)
+        width = min(1080, root.winfo_screenwidth() - 140)
+        height = min(950, root.winfo_screenheight() - 150)
+        root.geometry(f"{width}x{height}")
+        root.minsize(900, 620)
         root.configure(bg=BG)
         self.build_styles()
 
@@ -177,7 +212,9 @@ class App:
         self.pages = {key: ttk.Frame(self.content, padding=(22, 10, 22, 16))
                       for key in ("make", "judge", "stats")}
 
-        make = self.pages["make"]
+        scroll = ScrollFrame(self.pages["make"])
+        scroll.pack(fill="both", expand=True)
+        make = scroll.body
         source = self.section(make, "Source")
         self.nb = ttk.Notebook(source)
         self.nb.pack(fill="x")
@@ -1307,7 +1344,9 @@ def main():
         return 1
     if len(sys.argv) > 1:
         arg = sys.argv[1]
-        if arg.lower().startswith("http"):
+        if arg in ("judge", "stats", "make"):
+            app.show_page(arg)
+        elif arg.lower().startswith("http"):
             app.vod_url_var.set(arg)
             app.nb.select(1)
         elif Path(arg).is_dir():
