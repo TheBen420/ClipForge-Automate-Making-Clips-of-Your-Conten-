@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.3.4"
+VERSION = "0.4.0"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -2254,6 +2254,31 @@ def unjudged_clips(cfg, durations=True):
     return rows
 
 
+_DURATIONS = {}
+
+
+def clip_duration(cfg, path):
+    """One clip's length, remembering it so opening the judge tab does not re-probe the folder.
+
+    ffprobe is the only way to know a clip's length, and a folder of a few hundred clips takes
+    seconds to probe one at a time, so the answer is cached against the file's size and mtime.
+    """
+    path = Path(path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), int(stat.st_mtime), stat.st_size)
+    if key in _DURATIONS:
+        return _DURATIONS[key]
+    try:
+        value = round(probe(cfg, path)["duration"], 1)
+    except (Fail, ValueError, KeyError):
+        value = None
+    _DURATIONS[key] = value
+    return value
+
+
 def disk_clips(cfg, durations=True):
     """Every clip on disk with whatever has been judged about it so far.
 
@@ -2261,22 +2286,23 @@ def disk_clips(cfg, durations=True):
     verdicts are shown rather than hidden: a pass can be redone instead of repeated blind.
     """
     judged = {str(row.get("clip") or ""): row for row in load_feedback(cfg)}
-    rows = []
+    paths = []
     for folder in ("clips", "ready"):
         root = media_root(cfg) / folder
         if not root.exists():
             continue
-        for path in sorted(root.rglob("*.mp4")):
-            previous = judged.get(str(path)) or {}
-            duration = None
-            if durations:
-                try:
-                    duration = round(probe(cfg, path)["duration"], 1)
-                except (Fail, ValueError, KeyError):
-                    duration = None
-            rows.append({"path": str(path), "entry": None, "duration": duration,
-                         "verdict": previous.get("verdict"),
-                         "reason": previous.get("reason")})
+        paths.extend(sorted(root.rglob("*.mp4")))
+    lengths = {}
+    if durations and paths:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for path, value in zip(paths, pool.map(lambda path: clip_duration(cfg, path), paths)):
+                lengths[str(path)] = value
+    rows = []
+    for path in paths:
+        previous = judged.get(str(path)) or {}
+        rows.append({"path": str(path), "entry": None, "duration": lengths.get(str(path)),
+                     "verdict": previous.get("verdict"),
+                     "reason": previous.get("reason")})
     return rows
 
 

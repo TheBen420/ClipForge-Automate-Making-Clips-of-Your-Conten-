@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipForge</title>
+<style>
+  :root {
+    --bg: #131316;
+    --panel: #191a1e;
+    --card: #1f2026;
+    --field: #24252b;
+    --line: #2c2d34;
+    --fg: #ececed;
+    --muted: #9798a1;
+    --faint: #6b6c76;
+    --accent: #3ba55d;
+    --accent-soft: #3ba55d22;
+    --danger: #d05b5b;
+    --warn: #d1a054;
+    --radius: 10px;
+    --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  .app { display: grid; grid-template-columns: 208px 1fr; height: 100vh; }
+
+  /* rail */
+  .rail { background: #101013; border-right: 1px solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(160deg, #4ecb74, #2b8a48); display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #0c1a10; }
+  .brand strong { font-size: 13px; letter-spacing: .2px; }
+  .brand span { display: block; font-size: 11px; color: var(--faint); }
+  .nav { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px; color: var(--muted); cursor: pointer; background: none; border: 0; text-align: left; width: 100%; }
+  .nav:hover { background: #1a1a1e; color: var(--fg); }
+  .nav[aria-selected="true"] { background: #22232a; color: var(--fg); }
+  .nav .ico { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; opacity: .85; }
+  .nav .count { margin-left: auto; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .rail .foot { margin-top: auto; padding: 10px 9px 2px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; }
+
+  /* panel */
+  .panel { display: flex; flex-direction: column; min-width: 0; }
+  .head { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+  .head h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .1px; }
+  .head .sub { color: var(--faint); font-size: 12px; margin-top: 2px; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; background: #21222a; color: var(--muted); font-size: 11px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .btn { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--fg); cursor: pointer; }
+  .btn:hover { background: #2b2c33; }
+  .btn.primary { background: var(--accent); border-color: #48b96c; color: #0b1a10; font-weight: 600; }
+  .btn.primary:hover { background: #45b96a; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { background: #21222a; color: var(--fg); }
+  .btn.sm { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+  .btn[disabled] { opacity: .45; cursor: default; }
+
+  .body { padding: 20px 22px 26px; overflow: auto; display: grid; gap: 16px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .card .pad { padding: 14px 16px; }
+  .card h2 { margin: 0 0 2px; font-size: 12px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--faint); }
+  .card .hint { color: var(--faint); font-size: 11.5px; }
+
+  .tabs { display: flex; gap: 4px; padding: 4px; background: #101013; border-radius: 8px; width: max-content; }
+  .tabs button { border: 0; background: none; color: var(--muted); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .tabs button[aria-selected="true"] { background: #24252c; color: var(--fg); }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; color: var(--faint); }
+  .field .grow { flex: 1; min-width: 240px; }
+  input[type="text"], select {
+    height: 32px; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; color: var(--fg); outline: none;
+  }
+  input[type="text"]:focus, select:focus { border-color: #3f7f52; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .check input { accent-color: var(--accent); }
+
+  .grid-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; }
+
+  .actions { display: flex; align-items: center; gap: 10px; }
+  .progress { height: 6px; border-radius: 999px; background: #23242b; overflow: hidden; }
+  .progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+  .log { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: pre-wrap; max-height: 148px; overflow: auto; }
+  .log b { color: var(--fg); font-weight: 500; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: #21222a; border-radius: 7px; padding: 6px 10px; font-size: 11.5px; color: var(--muted); }
+  .chip b { color: var(--fg); font-weight: 600; }
+
+  /* judging */
+  .judge { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+  .clips { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .clips .bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: #17181c; }
+  .clips .bar input { flex: 1; height: 28px; }
+  .clip { display: grid; grid-template-columns: 26px 74px 1fr 62px 92px; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #212228; cursor: pointer; }
+  .clip:last-child { border-bottom: 0; }
+  .clip:hover { background: #1c1d22; }
+  .clip[aria-selected="true"] { background: #20242a; box-shadow: inset 2px 0 0 var(--accent); }
+  .clip .thumb { height: 40px; border-radius: 5px; background: #2a2c33 center/cover no-repeat; position: relative; overflow: hidden; }
+  .clip .thumb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, #2f3239, #23252b); }
+  .clip .name { font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clip .meta { font-size: 11px; color: var(--faint); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .clip .score { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; text-align: center; }
+  .tag.keep { background: #1d3325; color: #6ddc90; }
+  .tag.maybe { background: #332e1d; color: #dfc069; }
+  .tag.reject { background: #331f1f; color: #e08a8a; }
+  .tag.none { background: #23242b; color: var(--faint); }
+
+  .side { display: grid; gap: 12px; align-content: start; }
+  .side h3 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--faint); }
+  .reasons { display: grid; gap: 6px; }
+  .reasons button { justify-content: space-between; display: flex; align-items: center; }
+  kbd { font-family: var(--mono); font-size: 10.5px; color: var(--faint); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-weight: 500; color: var(--faint); font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 7px 8px; border-bottom: 1px solid #212228; font-variant-numeric: tabular-nums; }
+  td.n { text-align: right; font-family: var(--mono); }
+  .track { height: 5px; background: #23242b; border-radius: 999px; overflow: hidden; width: 120px; }
+  .track > i { display: block; height: 100%; background: var(--accent); }
+  .track.neg > i { background: var(--danger); }
+
+  .empty { padding: 26px 16px; text-align: center; color: var(--faint); }
+  .hide { display: none !important; }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .rail { flex-direction: row; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .brand span, .rail .foot { display: none; }
+    .judge { grid-template-columns: 1fr; }
+    .clip { grid-template-columns: 20px 1fr 60px; }
+    .clip .thumb, .clip .score { display: none; }
+  }
+</style>
+<style>
+  /* The mockup's own CSS above is kept verbatim; these three rules are what the mockup never
+     needed because it held eleven fake clips. With a real folder of them the grid track grew
+     to the list's height and the whole window scrolled, so the panel is allowed to shrink and
+     the body scrolls inside it, as the mockup intends. */
+  .app, .panel, .body { min-height: 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="logo">CF</div>
+      <div><strong>ClipForge</strong><span id="rail-version">0.4.0</span></div>
+    </div>
+    <button class="nav" data-view="make" aria-selected="true">
+      <svg class="ico" viewBox="0 0 16 16"><path d="M3 3h10v10H3z"/><path d="M7 6.2 10.4 8 7 9.8z"/></svg>
+      Make clips
+    </button>
+    <button class="nav" data-view="judge" aria-selected="false">
+      <svg class="ico" viewBox="0 0 16 16"><path d="M3 8.5 6 11.5 13 4.5"/></svg>
+      Judge clips
+      <span class="count" id="nav-left"></span>
+    </button>
+    <button class="nav" data-view="stats" aria-selected="false">
+      <svg class="ico" viewBox="0 0 16 16"><path d="M3 12V7M8 12V3.5M13 12V9"/></svg>
+      Selection stats
+    </button>
+    <div class="foot">Judging a clip teaches the weighting.<br>Everything stays on this PC.</div>
+  </aside>
+
+  <main class="panel">
+    <header class="head">
+      <div>
+        <h1 id="head-title">Make clips</h1>
+        <div class="sub" id="head-sub">Clips land in one folder, named after the source video</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="pill" id="hardware"><span class="dot"></span> <span id="hardware-text">checking hardware</span></span>
+      <button class="btn" id="open-folder">Open clips folder</button>
+    </header>
+    <div class="body" id="body"></div>
+  </main>
+</div>
+
+<script>
+// Screens: Make (source, options, run) -> Judge (list, reasons) -> Stats (signals, reasons)
+// Python does every job; this page only asks and draws. Polling replaces events.
+const state = {
+  view: "make",
+  settings: null,
+  info: null,
+  hardware: null,
+  clips: [],
+  selected: 0,
+  filter: "",
+  lines: [],
+  cursor: 0,
+  progress: 0,
+  status: "Ready.",
+  running: false,
+};
+
+let api = null;
+const esc = (value) => String(value ?? "").replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+
+function boot() {
+  if (api) return;
+  api = window.pywebview && window.pywebview.api;
+  if (!api) return;
+  api.hello().then((info) => {
+    state.info = info;
+    document.getElementById("rail-version").textContent = info.version;
+  });
+  api.hardware().then((part) => {
+    state.hardware = part;
+    document.getElementById("hardware-text").textContent = part.device + " · " + part.encoder;
+  });
+  api.update_available().then((part) => {
+    const shown = document.getElementById("rail-version").textContent;
+    if (part.latest && part.latest !== (state.info || {}).version) {
+      document.getElementById("rail-version").textContent = shown + " · " + part.latest + " out";
+    } else if (shown) {
+      document.getElementById("rail-version").textContent = shown + " · up to date";
+    }
+  });
+  api.settings().then((settings) => {
+    state.settings = settings;
+    const wanted = (location.hash || "").replace("#", "");
+    setView(["make", "judge", "stats"].includes(wanted) ? wanted : "make");
+  });
+  api.list_clips().then((rows) => {
+    state.clips = rows;
+    state.selected = Math.max(0, rows.findIndex((row) => !row.verdict));
+    const left = rows.filter((row) => !row.verdict).length;
+    document.getElementById("nav-left").textContent = left ? left : "";
+    if (state.view === "judge") setView("judge");
+  });
+}
+
+window.addEventListener("pywebviewready", boot);
+if (window.pywebview && window.pywebview.api) boot();
+
+function setView(view) {
+  state.view = view;
+  document.querySelectorAll(".nav").forEach((b) =>
+    b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  const titles = {
+    make: ["Make clips", "Clips land in one folder, named after the source video"],
+    judge: ["Judge clips", "Kept against rejected is what teaches the weighting"],
+    stats: ["Selection stats", "What your judgements say about each signal"],
+  };
+  document.getElementById("head-title").textContent = titles[view][0];
+  document.getElementById("head-sub").textContent = titles[view][1];
+  const body = document.getElementById("body");
+  body.className = "body";
+  body.innerHTML = "";
+  if (view === "make") body.append(makeView());
+  else if (view === "judge") body.append(judgeView());
+  else body.append(statsView());
+}
+
+function persist() {
+  if (!api || !state.settings) return;
+  api.save(state.settings);
+}
+
+/* ---------------------------------------------------------------- make */
+
+function makeView() {
+  const s = state.settings || {};
+  const wrap = el('<div style="display:grid;gap:16px"></div>');
+
+  const source = el(`
+    <section class="card">
+      <div class="pad" style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="tabs" role="tablist">
+            <button role="tab" data-src="folder" aria-selected="${s.source !== "vod"}">Local folder</button>
+            <button role="tab" data-src="vod" aria-selected="${s.source === "vod"}">Twitch VOD</button>
+          </div>
+          <span class="hint">${s.source === "vod" ? "Downloads only the windows it keeps" : "Every video in the folder gets its own clips"}</span>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <label>${s.source === "vod" ? "VOD link" : "Recordings folder"}</label>
+            <input type="text" id="source-field" value="${esc(s.source === "vod" ? s.vod : s.folder)}">
+          </div>
+          ${s.source === "vod" ? '<button class="btn" id="pick">Load</button>' : '<button class="btn" id="pick">Choose folder</button>'}
+        </div>
+        ${s.source === "vod"
+          ? '<label class="check"><input type="checkbox" id="chat" ' + (s.chat ? "checked" : "") + '> Use Twitch chat hype <span class="hint">(leans on the messages at the peak)</span></label>'
+          : '<label class="check"><input type="checkbox" id="recursive" ' + (s.recursive ? "checked" : "") + '> Include subfolders</label>'}
+      </div>
+    </section>`);
+
+  const options = el(`
+    <section class="card">
+      <div class="pad" style="display:grid;gap:12px">
+        <h2>How to cut them</h2>
+        <div class="grid-opts">
+          <div class="field"><label>Framing</label><select id="fit">
+            ${["blur", "crop", "black"].map((v) => `<option ${s.fit === v ? "selected" : ""}>${v}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Captions</label><select id="captions">
+            ${["karaoke", "block", "off"].map((v) => `<option ${s.captions === v ? "selected" : ""}>${v}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Clips to make</label><select id="count">
+            ${Array.from({ length: 20 }, (_, i) => i + 1).map((n) => `<option ${Number(s.count) === n ? "selected" : ""}>${n}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Clip length</label><select id="length">
+            ${[15, 20, 25, 30, 45, 60].map((n) => `<option ${Number(s.length) === n ? "selected" : ""}>${n}s</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Content type</label><select id="preset">
+            ${["auto"].concat(state.info ? state.info.presets : []).map((v) => `<option>${v}</option>`).join("")}
+          </select></div>
+          <div class="field"><label>Transcription</label><select id="model">
+            ${["small.en", "medium.en", "large-v3"].map((v) => `<option ${s.model === v ? "selected" : ""}>${v}</option>`).join("")}
+          </select></div>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <label>Vocabulary <span class="hint">· names it keeps mis-hearing</span></label>
+            <input type="text" id="vocabulary" value="${esc(s.vocabulary)}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field grow">
+            <label>Save clips to</label>
+            <input type="text" id="output" value="${esc(s.output)}">
+          </div>
+          <button class="btn" id="pick-out">Choose</button>
+          <label class="check" style="align-self:center"><input type="checkbox" id="subfolder" ${s.subfolder ? "checked" : ""}> Subfolder per source</label>
+        </div>
+      </div>
+    </section>`);
+
+  const run = el(`
+    <section class="card">
+      <div class="pad" style="display:grid;gap:12px">
+        <div class="actions">
+          <button class="btn primary" id="go">${state.running ? "Working" : "Make clips"}</button>
+          <button class="btn ghost" id="stop" ${state.running ? "" : "disabled"}>Stop</button>
+          <div class="spacer"></div>
+          <div class="chips">
+            <span class="chip">1 render at a time</span>
+            <span class="chip">about 30% CPU</span>
+            <span class="chip">about 25s per clip</span>
+          </div>
+        </div>
+        <div class="progress" id="progress"><i style="width:${state.progress}%"></i></div>
+        <div class="log" id="log">${esc(state.lines.join("\n") || "Ready. Choose a folder, or load a VOD.")}</div>
+      </div>
+    </section>`);
+
+  wrap.append(source, options, run);
+
+  wrap.querySelectorAll("[data-src]").forEach((b) => b.addEventListener("click", () => {
+    state.settings.source = b.dataset.src;
+    persist();
+    setView("make");
+  }));
+  wrap.querySelector("#pick").addEventListener("click", async () => {
+    if (state.settings.source === "vod") {
+      state.settings.vod = wrap.querySelector("#source-field").value.trim();
+      persist();
+      return;
+    }
+    const picked = await api.choose_folder();
+    if (picked) {
+      state.settings.folder = picked;
+      wrap.querySelector("#source-field").value = picked;
+      persist();
+    }
+  });
+  wrap.querySelector("#pick-out").addEventListener("click", async () => {
+    const picked = await api.choose_output();
+    if (picked) {
+      state.settings.output = picked;
+      wrap.querySelector("#output").value = picked;
+      persist();
+    }
+  });
+
+  const bind = (id, key, cast = (v) => v) => {
+    const node = wrap.querySelector("#" + id);
+    if (!node) return;
+    node.addEventListener("change", () => {
+      state.settings[key] = cast(node.type === "checkbox" ? node.checked : node.value);
+      persist();
+    });
+    node.addEventListener("input", () => {
+      state.settings[key] = cast(node.type === "checkbox" ? node.checked : node.value);
+    });
+  };
+  bind("source-field", state.settings.source === "vod" ? "vod" : "folder");
+  bind("recursive", "recursive");
+  bind("chat", "chat");
+  bind("fit", "fit");
+  bind("captions", "captions");
+  bind("count", "count", Number);
+  bind("length", "length", (v) => String(v).replace("s", ""));
+  bind("preset", "preset");
+  bind("model", "model");
+  bind("vocabulary", "vocabulary");
+  bind("output", "output");
+  bind("subfolder", "subfolder");
+
+  wrap.querySelector("#go").addEventListener("click", async () => {
+    const payload = {
+      source: state.settings.source === "vod" ? "vod" : "folder",
+      folder: state.settings.folder, vod: state.settings.vod,
+      recursive: !!state.settings.recursive, chat: !!state.settings.chat,
+      fit: state.settings.fit, captions: state.settings.captions,
+      count: Number(state.settings.count), length: Number(state.settings.length),
+      preset: state.settings.preset === "auto" ? null : state.settings.preset,
+      model: state.settings.model, vocabulary: state.settings.vocabulary,
+      output: state.settings.output, subfolder: !!state.settings.subfolder,
+    };
+    state.lines = [];
+    state.cursor = 0;
+    state.progress = 0;
+    state.running = true;
+    setView("make");
+    await api.start(payload);
+    poll();
+  });
+  wrap.querySelector("#stop").addEventListener("click", () => api.cancel());
+  return wrap;
+}
+
+async function poll() {
+  if (!state.running) return;
+  const job = await api.poll(state.cursor);
+  state.lines = state.lines.concat(job.lines).slice(-400);
+  state.cursor = job.cursor;
+  state.progress = job.progress || 0;
+  state.status = job.status;
+  const log = document.getElementById("log");
+  if (log) {
+    log.textContent = state.lines.join("\n") || "working…";
+    log.scrollTop = log.scrollHeight;
+  }
+  const bar = document.querySelector("#progress > i");
+  if (bar) bar.style.width = state.progress + "%";
+  if (job.running) {
+    setTimeout(poll, 500);
+    return;
+  }
+  state.running = false;
+  if (job.error) {
+    state.lines.push("ERROR: " + job.error);
+    setView("make");
+    return;
+  }
+  if (job.review && job.review.length) {
+    state.clips = await api.list_clips();
+    state.selected = state.clips.findIndex((row) => !row.verdict);
+    if (state.selected < 0) state.selected = 0;
+    setView("judge");
+    return;
+  }
+  setView("make");
+}
+
+/* ---------------------------------------------------------------- judge */
+
+function verdictTag(row) {
+  if (!row.verdict) return '<span class="tag none">unjudged</span>';
+  const label = row.verdict === "reject" ? (row.reason || "rejected") : row.verdict;
+  return `<span class="tag ${row.verdict}">${esc(label)}</span>`;
+}
+
+function judgeView() {
+  const rows = state.clips.filter((row) => {
+    if (!state.filter) return true;
+    const needle = state.filter.toLowerCase();
+    return row.path.toLowerCase().includes(needle) ||
+           (row.verdict || "").toLowerCase().includes(needle) ||
+           (row.reason || "").toLowerCase().includes(needle);
+  });
+  const kept = state.clips.filter((r) => r.verdict === "keep").length;
+  const maybes = state.clips.filter((r) => r.verdict === "maybe").length;
+  const rejected = state.clips.filter((r) => r.verdict === "reject").length;
+
+  const wrap = el('<div class="judge"></div>');
+  const list = el(`
+    <section class="clips">
+      <div class="bar">
+        <input type="text" id="filter" placeholder="Filter clips" value="${esc(state.filter)}">
+        <span class="hint">${kept} kept · ${maybes} maybe · ${rejected} rejected · ${state.clips.length - kept - maybes - rejected} to go</span>
+      </div>
+      <div id="rows"></div>
+    </section>`);
+
+  const box = list.querySelector("#rows");
+  if (!rows.length) {
+    box.append(el('<div class="empty">No clip matches that.</div>'));
+  }
+  rows.forEach((row) => {
+    const index = state.clips.indexOf(row);
+    const name = row.path.split("\\").pop();
+    const rowEl = el(`
+      <div class="clip" role="option" aria-selected="${index === state.selected}" data-index="${index}">
+        <span class="score" style="text-align:left">${index + 1}</span>
+        <div class="thumb"></div>
+        <div>
+          <div class="name">${esc(name)}</div>
+          <div class="meta">${row.duration ? Math.round(row.duration) + "s" : ""}${row.score ? " · score " + Number(row.score).toFixed(2) : ""}</div>
+        </div>
+        <div class="score">${row.score ? Number(row.score).toFixed(2) : ""}</div>
+        <div style="text-align:right">${verdictTag(row)}</div>
+      </div>`);
+    rowEl.addEventListener("click", () => { state.selected = index; setView("judge"); });
+    rowEl.addEventListener("dblclick", () => api.open_path(row.path));
+    box.append(rowEl);
+  });
+
+  const reasons = state.info ? state.info.reasons : [];
+  const keys = state.info ? state.info.reason_keys : {};
+  const side = el(`
+    <aside class="side">
+      <section class="card"><div class="pad">
+        <h3>Judge this clip</h3>
+        <div class="actions" style="gap:6px">
+          <button class="btn sm primary" data-verdict="keep">Keep <kbd>k</kbd></button>
+          <button class="btn sm" data-verdict="maybe">Maybe <kbd>m</kbd></button>
+        </div>
+        <div class="reasons" style="margin-top:10px">
+          ${reasons.map((reason) => `<button class="btn sm" data-reason="${esc(reason)}">${esc(reason)} <kbd>${keys[reason] || ""}</kbd></button>`).join("")}
+        </div>
+        <p class="hint" style="margin:10px 0 0">boring and wrong moment blame the signals. late start, cut short and bad edit blame the window.</p>
+      </div></section>
+      <section class="card"><div class="pad">
+        <h3>This pass</h3>
+        <table>
+          <tr><td>Kept</td><td class="n">${kept}</td></tr>
+          <tr><td>Maybe</td><td class="n">${maybes}</td></tr>
+          <tr><td>Rejected</td><td class="n">${rejected}</td></tr>
+          <tr><td>Reasons recorded</td><td class="n">${state.clips.filter((r) => r.reason).length}</td></tr>
+        </table>
+      </div></section>
+    </aside>`);
+
+  list.querySelector("#filter").addEventListener("input", (event) => {
+    state.filter = event.target.value;
+    setView("judge");
+  });
+  side.querySelectorAll("[data-verdict]").forEach((b) =>
+    b.addEventListener("click", () => submit(b.dataset.verdict, null)));
+  side.querySelectorAll("[data-reason]").forEach((b) =>
+    b.addEventListener("click", () => submit("reject", b.dataset.reason)));
+
+  wrap.append(list, side);
+  return wrap;
+}
+
+async function submit(verdict, reason) {
+  const row = state.clips[state.selected];
+  if (!row) return;
+  row.verdict = verdict;
+  row.reason = reason;
+  state.clips = await api.judge(row.path, verdict, reason);
+  const next = state.clips.findIndex((item) => !item.verdict);
+  state.selected = next === -1 ? Math.min(state.selected + 1, state.clips.length - 1) : next;
+  const left = state.clips.filter((item) => !item.verdict).length;
+  document.getElementById("nav-left").textContent = left ? left : "";
+  setView("judge");
+}
+
+/* ---------------------------------------------------------------- stats */
+
+function statsView() {
+  const wrap = el('<div style="display:grid;gap:16px"></div>');
+  const loading = el('<section class="card"><div class="pad">Reading judgements…</div></section>');
+  wrap.append(loading);
+  api.stats().then((data) => {
+    wrap.innerHTML = "";
+    const signals = data.signals
+      .slice()
+      .sort((a, b) => Math.abs(b.separation) - Math.abs(a.separation))
+      .map((row) => `
+        <tr>
+          <td>${esc(row.name)}</td>
+          <td class="n">${Number(row.weight).toFixed(2)}</td>
+          <td><div class="track ${row.separation < 0 ? "neg" : ""}"><i style="width:${Math.min(100, Math.abs(row.separation) * 100)}%"></i></div></td>
+          <td class="n">${Number(row.separation).toFixed(2)}</td>
+        </tr>`).join("");
+    const total = Object.values(data.reasons).reduce((a, b) => a + b, 0) || 1;
+    const reasons = Object.entries(data.reasons)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => `
+        <tr>
+          <td>${esc(name)}</td>
+          <td><div class="track"><i style="width:${(count / total) * 100}%"></i></div></td>
+          <td class="n">${Math.round((count / total) * 100)}%</td>
+        </tr>`).join("");
+    wrap.append(el(`
+      <section class="card"><div class="pad">
+        <h2>Signals, and what they earned</h2>
+        <p class="hint" style="margin:0 0 10px">${data.judged} judgements. Separation near 1 means the signal picks what you keep.</p>
+        <table>
+          <tr><th>Signal</th><th style="text-align:right">Weight</th><th>Separation</th><th style="text-align:right"></th></tr>
+          ${signals}
+        </table>
+      </div></section>`));
+    wrap.append(el(`
+      <section class="card"><div class="pad">
+        <h2>Why clips were dropped</h2>
+        <table><tr><th>Reason</th><th></th><th style="text-align:right">Share</th></tr>${reasons}</table>
+      </div></section>`));
+  });
+  return wrap;
+}
+
+/* ---------------------------------------------------------------- chrome */
+
+document.querySelectorAll(".nav").forEach((b) =>
+  b.addEventListener("click", () => setView(b.dataset.view)));
+document.getElementById("open-folder").addEventListener("click", () => {
+  if (state.settings && api) api.open_path(state.settings.output || state.info.media_root);
+});
+document.addEventListener("keydown", (event) => {
+  if (state.view !== "judge" || !state.info) return;
+  const tag = (event.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  const key = event.key.toLowerCase();
+  const keys = state.info.reason_keys || {};
+  if (key === "k") { submit("keep", null); event.preventDefault(); }
+  else if (key === "m") { submit("maybe", null); event.preventDefault(); }
+  else if (key === "r") { submit("reject", null); event.preventDefault(); }
+  else {
+    const reason = Object.keys(keys).find((name) => keys[name] === key);
+    if (reason) { submit("reject", reason); event.preventDefault(); }
+  }
+});
+</script>
+</body>
+</html>

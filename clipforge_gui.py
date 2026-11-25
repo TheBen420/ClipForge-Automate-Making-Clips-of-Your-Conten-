@@ -1380,6 +1380,12 @@ def open_review_window(cfg, records, target, root=None, name=None):
 
 def main():
     try:
+        import clipforge_web
+        if os.environ.get("CLIPFORGE_TK", "") != "1":
+            return clipforge_web.run()
+    except Exception:  # noqa: BLE001 - no webview runtime, no pywebview: use tk
+        pass
+    try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:  # noqa: BLE001 - not fatal, just crisper text when it works
