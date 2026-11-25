@@ -257,7 +257,7 @@ function setView(view) {
     b.setAttribute("aria-selected", String(b.dataset.view === view)));
   const titles = {
     make: ["Make clips", "Clips land in one folder, named after the source video"],
-    judge: ["Judge clips", "Kept against rejected is what teaches the weighting"],
+    judge: ["Judge clips", "Judge clips to better train ClipForge to what you desire"],
     stats: ["Selection stats", "What your judgements say about each signal"],
   };
   document.getElementById("head-title").textContent = titles[view][0];
