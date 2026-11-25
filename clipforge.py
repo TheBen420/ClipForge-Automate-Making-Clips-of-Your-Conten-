@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.9"
+VERSION = "0.2.0"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1701,8 +1701,13 @@ def write_session(cfg, mode, source, entry, clips, signals, seconds, extra=None)
 
 
 FEEDBACK_SCHEMA = 2
-# fixed set so the tallies stay comparable across batches; the GUI shows these as buttons
-REJECT_REASONS = ("boring", "cut off", "wrong moment", "framing")
+# Fixed set so the tallies stay comparable across batches; the GUI shows these as buttons.
+# Two of them blame completely different halves of the tool: boring and wrong moment blame
+# the signals that chose the window, bad edit blames the cut and the framing that dressed it
+# - a good moment dressed badly, which should not count against the signal that found it.
+REJECT_REASONS = ("boring", "wrong moment", "bad edit")
+# earlier builds split that last one in two, and old rows keep their wording in the tally
+REASON_ALIASES = {"cut off": "bad edit", "framing": "bad edit"}
 
 
 def top_signal(features, weights):
@@ -1750,6 +1755,31 @@ def load_feedback(cfg):
         except json.JSONDecodeError:
             continue
     return rows
+
+
+def update_reason(cfg, clip, reason):
+    """Attach a reason to a judgement already on file, leaving its verdict alone.
+
+    Judging with the keyboard is faster than reaching for a button, so a reject can land
+    without one. This lets the reason be added afterwards instead of forcing the whole
+    batch to be labelled in one pass.
+    """
+    path = feedback_path(cfg)
+    if not path.exists():
+        return False
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rows.append(json.loads(line))
+    changed = False
+    for row in rows:
+        if str(row.get("clip")) == str(clip) and row.get("verdict") == "reject":
+            row["reason"] = reason
+            changed = True
+    if changed:
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return changed
 
 
 def signal_split(feedback):
@@ -1878,6 +1908,7 @@ def cmd_stats(cfg, args):
     for row in feedback:
         key = row.get("reason")
         if key:
+            key = REASON_ALIASES.get(key, key)
             reasons[key] = reasons.get(key, 0) + 1
     if reasons:
         total_reasons = sum(reasons.values())

@@ -925,6 +925,11 @@ def open_review_window(cfg, records, target, root=None, name=None):
             cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
             record["verdict"] = verdict
             record["reason"] = reason
+        elif reason and record.get("verdict") == "reject":
+            cf.update_reason(cfg, record["path"], reason)
+            record["reason"] = reason
+            refresh()
+            return
         refresh(select_first_unjudged=True)
 
     def open_folder():
