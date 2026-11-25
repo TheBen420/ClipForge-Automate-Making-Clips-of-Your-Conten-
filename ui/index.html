@@ -150,6 +150,14 @@
   /* The vocabulary box holds a comma-separated list of names, so it gets room the mockup's
      single-line field did not allow for; nothing else in the card moves. */
   #vocabulary, #output { width: 420px; max-width: 100%; }
+  /* Judging works down a long list with the verdicts in view, so the body fills the window
+     and the clip list scrolls inside it while the side panel stays put. */
+  .panel > .body { flex: 1; min-height: 0; }
+  .body.judge-body { overflow: hidden; }
+  .body.judge-body .judge { height: 100%; min-height: 0; align-items: stretch; }
+  .body.judge-body .clips { display: flex; flex-direction: column; min-height: 0; }
+  .body.judge-body .clips > #rows { overflow-y: auto; min-height: 0; }
+  .body.judge-body .side { overflow-y: auto; min-height: 0; }
 </style>
 </head>
 <body>
@@ -251,7 +259,8 @@ if (window.pywebview && window.pywebview.api) boot();
 
 function setView(view) {
   const body = document.getElementById("body");
-  const carry = view === state.view ? body.scrollTop : 0;
+  const scroller = () => body.querySelector(".clips > #rows") || body;
+  const carry = view === state.view ? scroller().scrollTop : 0;
   state.view = view;
   document.querySelectorAll(".nav").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.view === view)));
@@ -262,12 +271,12 @@ function setView(view) {
   };
   document.getElementById("head-title").textContent = titles[view][0];
   document.getElementById("head-sub").textContent = titles[view][1];
-  body.className = "body";
+  body.className = view === "judge" ? "body judge-body" : "body";
   body.innerHTML = "";
   if (view === "make") body.append(makeView());
   else if (view === "judge") body.append(judgeView());
   else body.append(statsView());
-  body.scrollTop = carry;
+  scroller().scrollTop = carry;
   const current = body.querySelector("#current-clip");
   if (current) current.scrollIntoView({ block: "nearest" });
 }
