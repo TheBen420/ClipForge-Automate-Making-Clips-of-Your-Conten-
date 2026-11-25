@@ -158,6 +158,8 @@
   .body.judge-body .clips { display: flex; flex-direction: column; min-height: 0; }
   .body.judge-body .clips > #rows { overflow-y: auto; min-height: 0; }
   .body.judge-body .side { overflow-y: auto; min-height: 0; }
+  /* .clip is a grid, which outranks the hidden attribute the search uses to hide rows. */
+  .clip[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -501,14 +503,15 @@ function verdictTag(row) {
   return `<span class="tag ${row.verdict}">${esc(label)}</span>`;
 }
 
+const clipSearch = (row) =>
+  [row.path, row.verdict || "", row.reason || ""].join(" ").toLowerCase();
+
+const clipMatches = (row) => {
+  const needle = state.filter.toLowerCase().trim();
+  return !needle || clipSearch(row).includes(needle);
+};
+
 function judgeView() {
-  const rows = state.clips.filter((row) => {
-    if (!state.filter) return true;
-    const needle = state.filter.toLowerCase();
-    return row.path.toLowerCase().includes(needle) ||
-           (row.verdict || "").toLowerCase().includes(needle) ||
-           (row.reason || "").toLowerCase().includes(needle);
-  });
   const kept = state.clips.filter((r) => r.verdict === "keep").length;
   const maybes = state.clips.filter((r) => r.verdict === "maybe").length;
   const rejected = state.clips.filter((r) => r.verdict === "reject").length;
@@ -517,17 +520,16 @@ function judgeView() {
   const list = el(`
     <section class="clips">
       <div class="bar">
-        <input type="text" id="filter" placeholder="Filter clips" value="${esc(state.filter)}">
+        <input type="text" id="filter" placeholder="Search clips" value="${esc(state.filter)}">
         <span class="hint">${kept} kept · ${maybes} maybe · ${rejected} rejected · ${state.clips.length - kept - maybes - rejected} to go</span>
       </div>
       <div id="rows"></div>
     </section>`);
 
   const box = list.querySelector("#rows");
-  if (!rows.length) {
-    box.append(el('<div class="empty">No clip matches that.</div>'));
-  }
-  rows.forEach((row) => {
+  const empty = el('<div class="empty" hidden>No clip matches that.</div>');
+  box.append(empty);
+  state.clips.forEach((row) => {
     const index = state.clips.indexOf(row);
     const name = row.path.split("\\").pop();
     const rowEl = el(`
@@ -541,6 +543,8 @@ function judgeView() {
         <div class="score">${row.score ? Number(row.score).toFixed(2) : ""}</div>
         <div style="text-align:right">${verdictTag(row)}</div>
       </div>`);
+    rowEl.dataset.search = clipSearch(row);
+    rowEl.hidden = !clipMatches(row);
     rowEl.addEventListener("click", () => { state.selected = index; setView("judge"); });
     if (index === state.selected) rowEl.id = "current-clip";
     rowEl.addEventListener("dblclick", () => api.open_path(row.path));
@@ -573,10 +577,22 @@ function judgeView() {
       </div></section>
     </aside>`);
 
-  list.querySelector("#filter").addEventListener("input", (event) => {
+  const filter = list.querySelector("#filter");
+  const narrow = () => {
+    let shown = 0;
+    box.querySelectorAll(".clip").forEach((node) => {
+      const hit = !state.filter.toLowerCase().trim() ||
+                  node.dataset.search.includes(state.filter.toLowerCase().trim());
+      node.hidden = !hit;
+      if (hit) shown += 1;
+    });
+    empty.hidden = shown > 0;
+  };
+  filter.addEventListener("input", (event) => {
     state.filter = event.target.value;
-    setView("judge");
+    narrow();
   });
+  narrow();
   side.querySelectorAll("[data-verdict]").forEach((b) =>
     b.addEventListener("click", () => submit(b.dataset.verdict, null)));
   side.querySelectorAll("[data-reason]").forEach((b) =>
@@ -592,8 +608,8 @@ async function submit(verdict, reason) {
   row.verdict = verdict;
   row.reason = reason;
   await api.judge(row.path, verdict, reason);
-  const after = state.clips.findIndex((item, index) => index > state.selected && !item.verdict);
-  const first = state.clips.findIndex((item) => !item.verdict);
+  const after = state.clips.findIndex((item, index) => index > state.selected && !item.verdict && clipMatches(item));
+  const first = state.clips.findIndex((item) => !item.verdict && clipMatches(item));
   if (after !== -1) state.selected = after;
   else if (first !== -1) state.selected = first;
   else state.selected = Math.min(state.selected, state.clips.length - 1);
