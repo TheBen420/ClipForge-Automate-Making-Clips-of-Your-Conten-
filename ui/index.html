@@ -149,7 +149,7 @@
   .app, .panel, .body { min-height: 0; }
   /* The vocabulary box holds a comma-separated list of names, so it gets room the mockup's
      single-line field did not allow for; nothing else in the card moves. */
-  #vocabulary { width: 420px; max-width: 100%; }
+  #vocabulary, #output { width: 420px; max-width: 100%; }
 </style>
 </head>
 <body>
@@ -328,8 +328,10 @@ function makeView() {
         </div>
         <div class="row">
           <div class="field grow">
-            <label>Words ClipForge keeps mis-hearing</label>
+            <label>Vocabulary - Words ClipForge keeps mis-hearing</label>
             <input type="text" id="vocabulary" value="${esc(s.vocabulary)}">
+            <div class="hint" style="max-width:420px">Spelled here, the names and game terms the
+              transcriber keeps getting wrong come out right in the captions and in the clip names.</div>
           </div>
         </div>
         <div class="row">
