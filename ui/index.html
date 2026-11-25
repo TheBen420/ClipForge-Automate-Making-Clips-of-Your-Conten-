@@ -171,7 +171,7 @@
   .reasons [data-reason] kbd { color: #5a2f2f; border-color: #d79c9c; }
   /* Watching a clip happens in the window now: the cover is the button, and the player
      opens over the page so judging keys still reach it. */
-  .clip:hover .thumb.has-cover::before { content: "b6"; position: absolute; inset: 0;
+  .clip:hover .thumb.has-cover::before { content: "▶"; position: absolute; inset: 0;
     display: grid; place-items: center; font-size: 16px; color: #fff; z-index: 2;
     background: rgba(0, 0, 0, .35); }
   .thumb.has-cover { cursor: pointer; }
@@ -183,7 +183,7 @@
   .viewer-bar .name { font-size: 12px; color: var(--muted); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
   @media (min-width: 861px) {
-    .clip { grid-template-columns: 26px 24px 74px 1fr 62px 92px; }
+    .clip { grid-template-columns: 24px 74px 1fr 62px 92px; }
   }
   .clip .play { width: 22px; height: 22px; padding: 0; border-radius: 50%;
     border: 1px solid var(--line); background: #23242b; color: var(--muted);
@@ -597,7 +597,6 @@ function judgeView() {
     const name = row.path.split("\\").pop();
     const rowEl = el(`
       <div class="clip" role="option" aria-selected="${index === state.selected}" data-index="${index}">
-        <span class="score" style="text-align:left">${index + 1}</span>
         <button class="play" data-play="${index}" title="Preview this clip">&#9654;</button>
         <div class="thumb" data-index="${index}"></div>
         <div>
