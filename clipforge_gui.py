@@ -100,7 +100,20 @@ class StreamToQueue:
 
 
 def apply_icon(window):
-    """Give the window ClipForge's own icon so the taskbar and title bar agree."""
+    """Give the window ClipForge's own icon so the taskbar and title bar agree.
+
+    Windows groups taskbar buttons by process identity, and a window started by pythonw
+    inherits Python's, which shows Python's icon however the window's own icon is set. Every
+    window that takes the icon therefore claims the identity too, so a judging window opened
+    in its own process looks like ClipForge rather than like a Python script.
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ClipForge.App")
+        except Exception:  # noqa: BLE001 - never fatal, a plain taskbar icon at worst
+            pass
     icon = TOOL_DIR / "icon.ico"
     if os.name == "nt" and icon.exists():
         try:
@@ -129,17 +142,6 @@ class App:
         self.ready_root = cf.media_root(self.cfg) / "ready"
         self.clips_root = cf.media_root(self.cfg) / "clips"
         self.run_dir = None
-
-        # Windows groups taskbar buttons by process identity. Without its own AppUserModelID
-        # the window inherits pythonw.exe's identity and the taskbar keeps Python's icon,
-        # however the window's own icon is set.
-        if os.name == "nt":
-            try:
-                import ctypes
-
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ClipForge.App")
-            except Exception:  # noqa: BLE001 - never fatal, just a plain taskbar icon
-                pass
         root.title("ClipForge")
         apply_icon(root)
         root.geometry("880x900")
