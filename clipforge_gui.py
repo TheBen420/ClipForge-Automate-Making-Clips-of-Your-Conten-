@@ -10,6 +10,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import time
+import webbrowser
 from pathlib import Path
 
 TOOL_DIR = Path(__file__).resolve().parent
@@ -127,9 +128,19 @@ class App:
         outer = ttk.Frame(root, padding=18)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text="ClipForge", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Clips land in one folder, named after the source video.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(0, 12))
+        head = ttk.Frame(outer)
+        head.pack(fill="x")
+        titles = ttk.Frame(head)
+        titles.pack(side="left")
+        ttk.Label(titles, text="ClipForge", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(titles, text="Clips land in one folder, named after the source video.",
+                  style="Title.TLabel",
+                  font=("Segoe UI", 10)).pack(anchor="w")
+        self.update_btn = ttk.Button(head, text="Update available",
+                                     command=self.open_update)
+        ttk.Label(head, text=f"v{cf.VERSION}", style="Title.TLabel",
+                  font=("Segoe UI", 9)).pack(side="right", padx=(0, 10), pady=(6, 0))
+        self.root.after(1500, self.check_update)
 
         self.nb = ttk.Notebook(outer)
         self.nb.pack(fill="x")
@@ -405,6 +416,24 @@ class App:
             return
         open_review_window(self.cfg, rows, target, root=self.root)
 
+    def check_update(self):
+        """Ask GitHub for the published version in the background, once, at startup."""
+        def run():
+            try:
+                latest = cf.update_available(self.cfg)
+            except Exception:  # noqa: BLE001 - never let a network hiccup touch the app
+                latest = None
+            if latest:
+                self.queue.put(("update", latest))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def open_update(self):
+        try:
+            webbrowser.open(cf.REPO_URL)
+        except Exception:  # noqa: BLE001
+            messagebox.showinfo("ClipForge", f"A newer version is at {cf.REPO_URL}")
+
     def show_stats(self):
         def run():
             original = sys.stdout
@@ -660,7 +689,8 @@ class App:
         started = time.time()
         entry, meta, data = self.prepare(path)
         ranked, summary = cf.analyze(self.cfg, entry, meta, data,
-                                     preset=opts.get("preset"), want=opts["count"] * 2)
+                                     preset=opts.get("preset"), want=opts["count"] * 2,
+                                     min_words=cf.min_caption_words(opts.get("captions")))
         ns = argparse.Namespace(fit=opts["fit"], captions=opts["captions"], caps=False,
                                 focus=0.5, fps=opts.get("fps"), pad=0.2, snap=True, open=False)
         picks = ranked[: opts["count"]]
@@ -703,7 +733,8 @@ class App:
         self.queue.put(("progress", 45))
         self.queue.put(("status", "Scoring every signal…"))
         ranked, summary = cf.analyze(self.cfg, entry, meta, data,
-                                     preset=opts.get("preset"), want=opts["count"] * 2)
+                                     preset=opts.get("preset"), want=opts["count"] * 2,
+                                     min_words=cf.min_caption_words(opts.get("captions")))
         if not ranked:
             self.queue.put(("error", "No candidate moments found in this VOD."))
             return
@@ -777,7 +808,15 @@ class App:
             cf.cmd_index(self.cfg, argparse.Namespace(name=entry.name, model=None, language=None))
         elif not (entry / "audio.wav").exists():
             cf.ensure_audio(self.cfg, entry, meta)
-        return entry, meta, cf.load_transcript(entry)
+
+        data = cf.load_transcript(entry)
+        if not data.get("words"):
+            peak = cf.audio_peak_db(self.cfg, entry)
+            if peak is not None and peak < -45:
+                self.queue.put(("log", f"  {entry.name}: the audio track is silent (peak {peak:.0f} dB) - "
+                                       "no speech to caption, so this one is picked on motion and "
+                                       "energy alone" + chr(10)))
+        return entry, meta, data
 
     # ------------------------------------------------------------ event pump
 
@@ -802,6 +841,9 @@ class App:
                     self.load_btn.state(["!disabled"])
                 elif kind == "review":
                     self.show_review(payload)
+                elif kind == "update":
+                    self.update_btn.configure(text=f"Version {payload} is out")
+                    self.update_btn.pack(side="right", padx=(0, 10), pady=(6, 0))
                 elif kind == "error":
                     self.write_line(f"\nERROR: {payload}")
                     self.status_var.set("Failed - see the log below.")

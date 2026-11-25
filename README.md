@@ -17,6 +17,12 @@ Turns a livestream recording (or a VOD link) into vertical, captioned, post-read
 
 Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn't one. The first time you make clips it downloads the 1.5 GB speech model, once; after that everything runs offline. Windows may warn that the file came from the internet: **More info → Run anyway**. Everything it installs is either from Microsoft's own package manager (winget) or from python.org.
 
+### Updating and removing
+
+The app checks GitHub once a day in the background and shows a **Version x.y.z is out** button in the top right when there is something newer; `cf update` prints the same comparison, with `--fresh` to bypass the half-day cache. To update, download the zip again and run **Install ClipForge** from the new folder: it copies over the old install and reuses the private Python, so it takes seconds. Your clips, transcripts and judgements are untouched.
+
+**Uninstall ClipForge** in the install folder removes the app, its private Python and the desktop shortcut. It keeps `D:\ClipForge` by default — your clips and transcripts are only deleted if you type `DELETE CLIPS` at the prompt.
+
 ### Any machine, from a terminal
 
 This is what that installer does by hand, and the only supported path on macOS and Linux.

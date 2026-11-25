@@ -691,6 +691,10 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
+VERSION = "1.0.0"
+REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
+REPO_URL = f"https://github.com/{REPO}"
+MIN_CHAT_MESSAGES = 5
 HYPE_TOKENS = ("lul", "lmao", "omg", "pog", "clip", "clipped", "no way", "holy", "wtf", "insane")
 
 
@@ -811,8 +815,18 @@ def snap_bounds(data, peak, length, min_len, total, max_pre=3.0):
     return round(start, 2), round(end, 2)
 
 
-def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40):
-    """Score candidate windows from every signal available, returning ranked moments."""
+
+def min_caption_words(mode):
+    """Captioned clips want someone talking in them; captionless ones don't care."""
+    return 4 if mode in ("karaoke", "block") else 0
+
+
+def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_words=0):
+    """Score candidate windows from every signal available, returning ranked moments.
+
+    With min_words, windows carrying less speech than that are passed over, which keeps
+    captioned clips from landing on a stretch where nobody is talking.
+    """
     import numpy as np
 
     merged = dict(cfg.get("weights") or {})
@@ -918,12 +932,23 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40):
         alive.append(candidate)
     candidates = alive or candidates
 
+    sorted_times = sorted(word["start"] for word in (data.get("words") or []))
+    if min_words and not sorted_times:
+        min_words = 0        # nothing transcribed: a speech floor would reject everything
+
+    def words_between(low, high):
+        import bisect
+
+        return bisect.bisect_left(sorted_times, high) - bisect.bisect_left(sorted_times, low)
+
     candidates.sort(key=lambda c: -c["score"])
     results, taken = [], []
     for candidate in candidates:
         if candidate["peak"] > total - min_len:
             continue
         start, end = snap_bounds(data, candidate["peak"], win, min_len, total)
+        if min_words and words_between(start, end) < min_words:
+            continue
         if end - start < min_len * 0.5:
             continue
         if any(start < other[1] - 0.4 and end > other[0] + 0.4 for other in taken):
@@ -942,6 +967,10 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40):
         })
         if len(results) >= want:
             break
+
+    if not results and min_words:
+        print(f"  (no window had {min_words} spoken words - falling back to every signal)")
+        return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want)
 
     summary = {"total": round(total, 1), "candidates": len(candidates), "window": round(win, 1),
                "weights": {name: round(float(weight), 3) for name, weight in merged.items()}}
@@ -1150,6 +1179,21 @@ def prepare_source(cfg, entry, meta, start, end, work):
             for stale in work.glob("section.*"):
                 stale.unlink(missing_ok=True)
     raise Fail("download produced no video file")
+
+
+def audio_peak_db(cfg, entry):
+    """Loudest moment in a library entry's audio, so a silent track can be named as such."""
+    wav = Path(entry) / "audio.wav"
+    if not wav.exists():
+        return None
+    proc = subprocess.run(
+        [ffmpeg_path(cfg), "-hide_banner", "-nostats", "-i", str(wav),
+         "-af", "volumedetect", "-f", "null", "-"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        encoding="utf-8", errors="replace", **NO_WINDOW,
+    )
+    match = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?) dB", proc.stderr or "")
+    return float(match.group(1)) if match else None
 
 
 def source_peak_db(cfg, source, offset, duration):
@@ -1763,6 +1807,73 @@ def cmd_new(cfg, args):
     state_path.write_text(json.dumps(seen, indent=2), encoding="utf-8")
 
 
+
+# ---------------------------------------------------------------- updates
+
+def parse_version(text):
+    """'1.2.3' -> (1, 2, 3), so versions compare as numbers instead of strings."""
+    parts = re.findall(r"\d+", text or "")
+    return tuple(int(part) for part in parts[:3]) or (0,)
+
+
+def remote_version(timeout=5.0):
+    """The version published on the main branch, or None when the check can't be made."""
+    import urllib.request
+
+    url = f"https://raw.githubusercontent.com/{REPO}/main/clipforge.py"
+    request = urllib.request.Request(url, headers={"User-Agent": f"clipforge/{VERSION}"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        source = response.read().decode("utf-8", errors="replace")
+    match = re.search(r'^VERSION = "([0-9][0-9.]*)"', source, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def update_status(cfg, max_age=12 * 3600):
+    """Compare against the published version, remembering the answer for half a day."""
+    import urllib.request  # noqa: F401 - imported so a missing network fails here, not later
+
+    cache_path = media_root(cfg) / "update-check.json"
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        if time.time() - float(cached.get("at", 0)) < max_age:
+            return cached.get("latest"), cached.get("checked", True)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    try:
+        latest = remote_version()
+    except Exception:  # noqa: BLE001 - offline is normal, not an error worth showing
+        return None, False
+    if latest:
+        try:
+            cache_path.write_text(json.dumps({"at": time.time(), "latest": latest}),
+                                  encoding="utf-8")
+        except OSError:
+            pass
+    return latest, latest is not None
+
+
+def update_available(cfg):
+    """The published version when it is newer than this one, otherwise None."""
+    latest, checked = update_status(cfg)
+    if checked and latest and parse_version(latest) > parse_version(VERSION):
+        return latest
+    return None
+
+
+def cmd_update(cfg, args):
+    print(f"ClipForge {VERSION}")
+    latest, checked = update_status(cfg, max_age=0 if args.fresh else 12 * 3600)
+    if not checked:
+        print("Couldn't reach GitHub - check the connection and try again.")
+        return 1
+    if latest and parse_version(latest) > parse_version(VERSION):
+        print(f"Version {latest} is out: {REPO_URL}")
+        print("Download the zip, extract it, and run Install ClipForge again - it upgrades in place.")
+        return 0
+    print(f"Up to date (published version is {latest or 'unknown'}).")
+    return 0
+
+
 def cmd_doctor(cfg, args):
     ok = True
 
@@ -1937,6 +2048,9 @@ def main(argv=None):
     a.add_argument("target", nargs="?", help="a session json or a folder of clips "
                                             "(default: the newest run)")
 
+    a = sub.add_parser("update", help="compare this copy with the one on GitHub")
+    a.add_argument("--fresh", action="store_true", help="ignore the half-day cache")
+
     sub.add_parser("doctor", help="check that everything is installed")
 
     args = p.parse_args(argv)
@@ -1944,7 +2058,7 @@ def main(argv=None):
         "add": cmd_add, "index": cmd_index, "find": cmd_find, "suggest": cmd_suggest,
         "make": cmd_make, "auto": cmd_auto, "batch": cmd_batch, "ls": cmd_ls,
         "chat": cmd_chat, "stats": cmd_stats, "new": cmd_new, "doctor": cmd_doctor,
-        "review": cmd_review,
+        "review": cmd_review, "update": cmd_update,
     }
     try:
         return handlers[args.command](cfg, args) or 0
