@@ -157,7 +157,13 @@
   .body.judge-body .judge { height: 100%; min-height: 0; align-items: stretch; }
   .body.judge-body .clips { display: flex; flex-direction: column; min-height: 0; }
   .body.judge-body .clips > #rows { overflow-y: auto; min-height: 0; }
-  .body.judge-body .side { overflow-y: auto; min-height: 0; }
+  .body.judge-body .side { overflow-y: auto; min-height: 0; display: flex;
+    flex-direction: column; gap: 12px; }
+  #selection-card { margin-top: auto; }
+  #selection-card .sel-name { font-size: 12px; color: var(--fg); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #selection-card .sel-meta { font-size: 11px; color: var(--faint); margin-top: 3px;
+    font-variant-numeric: tabular-nums; }
   /* .clip is a grid, which outranks the hidden attribute the search uses to hide rows. */
   .clip[hidden] { display: none; }
   /* A real cover replaces the mockup's gradient placeholder. */
@@ -674,6 +680,13 @@ function judgeView() {
     });
   });
 
+  const current = state.clips[state.selected];
+  const currentName = current ? current.path.split("\\").pop() : "No clip selected";
+  const currentBatch = current ? (current.source || "Clips") : "";
+  const inBatch = current ? state.clips.filter((row) => (row.source || "Clips") === currentBatch) : [];
+  const position = current ? inBatch.indexOf(current) + 1 : 0;
+  const groupSize = inBatch.length;
+
   const reasons = state.info ? state.info.reasons : [];
   const keys = state.info ? state.info.reason_keys : {};
   const side = el(`
@@ -699,6 +712,12 @@ function judgeView() {
           <tr><td>Rejected</td><td class="n">${rejected}</td></tr>
           <tr><td>Reasons recorded</td><td class="n">${state.clips.filter((r) => r.reason).length}</td></tr>
         </table>
+      </div></section>
+      <section class="card" id="selection-card"><div class="pad">
+        <h3>Selected clip</h3>
+        <div class="sel-name" title="${esc(current ? current.path : "")}">${esc(currentName)}</div>
+        <div class="sel-meta">${current ? esc(currentBatch) + " · " + position + " of " + groupSize : ""}</div>
+        <div style="margin-top:8px">${current ? verdictTag(current) : ""}</div>
       </div></section>
     </aside>`);
 
