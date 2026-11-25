@@ -65,7 +65,7 @@ $shortcuts = @(
     (Join-Path ([Environment]::GetFolderPath("Desktop")) "ClipForge.lnk"),
     (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\ClipForge.lnk"),
     (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\ClipForge.lnk")
-)
+) | Where-Object { $_ } | Select-Object -Unique
 if ($NoShortcut) { $shortcuts = @() }
 foreach ($shortcut in $shortcuts) {
     if ($shortcut -and (Test-Path $shortcut)) {
