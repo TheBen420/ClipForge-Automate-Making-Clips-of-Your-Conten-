@@ -201,6 +201,7 @@ const state = {
   progress: 0,
   status: "Ready.",
   running: false,
+  per_clip: null,
 };
 
 let api = null;
@@ -347,9 +348,8 @@ function makeView() {
           <button class="btn ghost" id="stop" ${state.running ? "" : "disabled"}>Stop</button>
           <div class="spacer"></div>
           <div class="chips">
-            <span class="chip">1 render at a time</span>
-            <span class="chip">about 30% CPU</span>
-            <span class="chip">about 25s per clip</span>
+            <span class="chip">${s.parallel > 1 ? s.parallel + " renders" : "1 render"} at a time</span>
+            <span class="chip" id="per-clip" ${state.per_clip ? "" : "hidden"}>${state.per_clip ? "about " + state.per_clip + "s per clip" : ""}</span>
           </div>
         </div>
         <div class="progress" id="progress"><i style="width:${state.progress}%"></i></div>
@@ -447,6 +447,14 @@ async function poll() {
   }
   const bar = document.querySelector("#progress > i");
   if (bar) bar.style.width = state.progress + "%";
+  if (job.per_clip && job.per_clip !== state.per_clip) {
+    state.per_clip = job.per_clip;
+    const chip = document.getElementById("per-clip");
+    if (chip) {
+      chip.textContent = "about " + state.per_clip + "s per clip";
+      chip.hidden = false;
+    }
+  }
   if (job.running) {
     setTimeout(poll, 500);
     return;

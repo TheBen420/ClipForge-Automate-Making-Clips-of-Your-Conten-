@@ -38,6 +38,9 @@ class Api:
         self._window = None  # private: pywebview would otherwise walk the window object
         self.lock = threading.Lock()
         self._hardware = None
+        self.per_clip = None
+        self.render_seconds = 0.0
+        self.render_clips = 0
 
     # ---------------------------------------------------------------- state
 
@@ -87,6 +90,7 @@ class Api:
             "chat": bool(cfg.get("chat", True)),
             "fit": cfg.get("fit", "blur"),
             "captions": cfg.get("captions", "karaoke"),
+            "parallel": cf.safe_worker_count(cfg.get("render_workers", 1))[0],
             "count": int(cfg.get("count", 2)),
             "length": int(cfg.get("length", 25)),
             "preset": "auto",
@@ -191,6 +195,10 @@ class Api:
         ns = self._opts(payload)
         started = time.time()
         made, failed = cf.render_many(self.cfg, entry, meta, data, picks, ns, flat_dir=out_dir)
+        if made:
+            self.render_seconds += time.time() - started
+            self.render_clips += len(made)
+            self.per_clip = round(self.render_seconds / self.render_clips, 1)
         for item, exc in failed:
             self.say(f"  render failed at {cf.fmt_ts(item['start'])}: {exc}")
         records = []
@@ -306,7 +314,7 @@ class Api:
             review = list(self.review) if not self.running else []
         return {"lines": lines, "cursor": total, "progress": self.progress,
                 "status": self.status, "running": self.running, "error": self.error,
-                "review": review}
+                "review": review, "per_clip": self.per_clip}
 
     # ---------------------------------------------------------------- judging
 

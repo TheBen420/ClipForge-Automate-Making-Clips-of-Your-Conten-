@@ -611,8 +611,8 @@ class App:
         self.open_btn = self.header_open
         chips = tk.Frame(actions, bg=CARD)
         chips.pack(side="right")
-        workers = int(self.cfg.get("render_workers", 1) or 1)
-        for text in (f"{workers} render at a time", "about 30% CPU", "about 25s per clip"):
+        workers = cf.safe_worker_count(self.cfg.get("render_workers", 1))[0]
+        for text in (f"{workers} render at a time",):
             tk.Label(chips, text=text, bg=RAIL_ON, fg=MUTED, font=("Segoe UI", 8),
                      padx=8, pady=3).pack(side="left", padx=(6, 0))
 
