@@ -691,7 +691,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.0.8"
+VERSION = "0.0.9"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1817,13 +1817,39 @@ def parse_version(text):
 
 
 def remote_version(timeout=5.0):
-    """The version published on the main branch, or None when the check can't be made."""
+    """The version published on the main branch, or None when the check can't be made.
+
+    The file is fetched at its commit sha rather than at the branch name: GitHub's CDN
+    keeps serving the previous build from a branch URL for minutes after a push, which
+    would have the check reporting an older build than the repo actually holds.
+    """
     import urllib.request
 
-    url = f"https://raw.githubusercontent.com/{REPO}/main/clipforge.py"
-    request = urllib.request.Request(url, headers={"User-Agent": f"clipforge/{VERSION}"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        source = response.read().decode("utf-8", errors="replace")
+    headers = {"User-Agent": f"clipforge/{VERSION}", "Accept": "application/vnd.github+json"}
+    sha = None
+    try:
+        api = f"https://api.github.com/repos/{REPO}/commits/main"
+        with urllib.request.urlopen(
+                urllib.request.Request(api, headers=headers), timeout=timeout) as response:
+            sha = json.loads(response.read().decode("utf-8")).get("sha")
+    except Exception:  # noqa: BLE001 - the raw URL below is a usable fallback
+        sha = None
+
+    urls = []
+    if sha:
+        urls.append(f"https://raw.githubusercontent.com/{REPO}/{sha}/clipforge.py")
+    urls.append(f"https://raw.githubusercontent.com/{REPO}/main/clipforge.py")
+    for url in urls:
+        try:
+            with urllib.request.urlopen(
+                    urllib.request.Request(url, headers=headers), timeout=timeout) as response:
+                source = response.read().decode("utf-8", errors="replace")
+            break
+        except Exception:  # noqa: BLE001 - try the next URL
+            continue
+    else:
+        return None
+
     match = re.search(r'^VERSION = "([0-9][0-9.]*)"', source, re.MULTILINE)
     return match.group(1) if match else None
 
