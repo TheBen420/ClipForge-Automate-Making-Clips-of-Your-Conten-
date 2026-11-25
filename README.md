@@ -185,21 +185,23 @@ Two properties matter here. The multipliers are derived from `feedback.jsonl` on
 
 ## Speed
 
-Measured on a 1440p60 source, two recordings, four clips total:
+Measured on this machine, one 22-second clip each time, mean CPU sampled once a second for the whole run (a VOD clip includes downloading its section, a local clip does not):
 
-| setup | wall time |
-| --- | --- |
-| one job, 60fps | 32.3s |
-| one job, 60fps, current filter chain | 29.7s |
-| two jobs, 60fps | 29.0s |
-| two jobs, 30fps | 21.6s |
+| setup | wall time | mean CPU |
+| --- | --- | --- |
+| one render at a time, 60fps, VOD clip | 24.0s | 31% |
+| two renders at a time, 60fps, VOD clip | 25.8s | 92% |
+| one render at a time, 30fps, VOD clip | 21.1s | 38% |
+| one local recording, no captions | 6.9s | 6% |
 
-Where the time goes for a 24-second clip: about 9s in ffmpeg, 0.1s on the audio RMS, 4.7s to analyse a whole 100s recording. The render dominates, and it is CPU-bound on decode and filtering while NVENC handles the encode — which is why running jobs in parallel only gains ~10%: one render already uses every core. Decoding on the GPU instead (NVDEC) measured *slower* once the filter chain was cheapened, so decoding stays on the CPU.
+Two renders at once is the only real CPU sink: three times the cores for 4% of the wall clock. That is why one job is the default, and why the machine stays responsive while it works instead of sitting at 100% for an hour. 30fps finishes sooner but spends the same total CPU spread thinner; it is a smoothness choice, not a savings one, so `auto` leaves the frame rate matching the source.
+
+The render is CPU-bound on decode and filtering while NVENC handles the encode; decoding on the GPU instead (NVDEC) measured *slower* once the filter chain was cheapened, so decoding stays on the CPU.
 
 What actually helps:
 
-- **Parallel jobs** overlaps one job's analysis with another's render. Capped at 2 by choice: one render already uses every core, so a third job mostly raises the temperature.
-- **Frame rate 30** roughly halves the per-frame cost — 29.0s down to 21.6s for the same four clips. Set it in the Frame rate box; leave it on `auto` to match the source.
+- **One job at a time** is the default for exactly that reason. Two is available and overlaps one clip's analysis with another's render, but it spends triple the CPU to save a second per clip.
+- **Cached motion analysis.** The pass that decodes a recording to score on-screen motion writes `motion.json` beside `transcript.json`, keyed to the file's size and timestamp. The first run on a recording costs 10-26s; every run after is instant, so re-clipping something you already indexed costs nothing extra.
 - **The filter chain** blurs the background at quarter resolution and scales with bicubic instead of lanczos. Visually identical, about a third faster per render.
 
 ## Config

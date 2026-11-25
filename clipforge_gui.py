@@ -282,7 +282,7 @@ class App:
                                                       state="readonly",
                                                       values=["auto", "60", "30"]).pack())
         self.workers_var = tk.StringVar(
-            value=str(min(cf.MAX_WORKERS, int(self.cfg.get("workers", 2)))))
+            value=str(min(cf.MAX_WORKERS, int(self.cfg.get("workers", 1)))))
         labelled("Parallel jobs", lambda p: ttk.Combobox(p, textvariable=self.workers_var,
                                                          width=5, state="readonly",
                                                          values=[str(n) for n in
@@ -310,9 +310,9 @@ class App:
                   ).pack(anchor="w", pady=(4, 0))
 
         ttk.Label(parent, style="Muted.TLabel", wraplength=790, justify="left",
-                  text="Parallel jobs: how many recordings it works on at once. 2 lets one "
-                       "video's analysis run while another is encoding. One clip already uses "
-                       "every CPU core and the GPU, so above 2 mostly adds heat rather than speed."
+                  text="Parallel jobs: how many recordings it works on at once. One clip already "
+                       "uses every core, so 1 keeps the machine responsive and 2 is only a "
+                       "percent or two faster while it pins the CPU the whole run."
                   ).pack(anchor="w", pady=(8, 0))
 
     def build_destination(self, parent):
@@ -674,7 +674,7 @@ class App:
             return
 
         workers = max(1, min(cf.MAX_WORKERS,
-                             int(opts.get("workers") or self.cfg.get("workers", 2))))
+                             int(opts.get("workers") or self.cfg.get("workers", 1))))
         self.queue.put(("log", f"Found {len(files)} recording(s) in {folder} "
                                f"({workers} at a time)"))
         self.queue.put(("log", f"Clips from this run go to:\n  {self.run_dir}\n"))

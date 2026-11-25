@@ -71,9 +71,16 @@ DEFAULT_CONFIG = {
                       "best", "wtf", "broken", "huge"],
     "skip_edges": 60,
     "min_clip": 12,
-    "workers": 2,
-    "render_workers": 2,
+    # two concurrent renders measured 92% CPU against 31% for one, and bought 4% of the
+    # wall clock: heat and fan noise for nothing. One render already fills every core.
+    "workers": 1,
+    "render_workers": 1,
+    "settings_version": 2,
 }
+
+# Up to settings_version 1 the defaults rendered two clips at once. config.json is written
+# on first run and by the GUI, so a stored "2" is an old default, not a choice: move it once.
+CONFIG_MIGRATIONS = {2: lambda cfg: cfg.update({"workers": 1, "render_workers": 1})}
 
 AUDIO_RATE = 16000
 MAX_WORKERS = 2  # deliberately capped: a single render already saturates the CPU
@@ -96,9 +103,17 @@ def load_config():
     cfg = dict(DEFAULT_CONFIG)
     if CONFIG_PATH.exists():
         try:
-            cfg.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+            stored = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             raise Fail(f"config.json is not valid JSON: {CONFIG_PATH}")
+        cfg.update(stored)
+        version = int(stored.get("settings_version", 1) or 1)
+        if version < DEFAULT_CONFIG["settings_version"]:
+            for step in range(version + 1, DEFAULT_CONFIG["settings_version"] + 1):
+                if step in CONFIG_MIGRATIONS:
+                    CONFIG_MIGRATIONS[step](cfg)
+            cfg["settings_version"] = DEFAULT_CONFIG["settings_version"]
+            save_config(cfg)
     else:
         CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
     return cfg
@@ -638,6 +653,16 @@ def load_rms(entry, bucket=0.25):
     return 20 * np.log10(rms + 1e-12), bucket
 
 
+def motion_stamp(meta, fps, size):
+    """Identity of a motion read: the source as it is on disk and the sampling used."""
+    try:
+        stat = Path(meta["path"]).stat()
+    except OSError:
+        return None
+    return {"path": meta["path"], "size": stat.st_size, "mtime": round(stat.st_mtime, 3),
+            "fps": fps, "box": list(size)}
+
+
 def load_motion(cfg, entry, meta, fps=2, size=(64, 36)):
     """Per-frame visual activity, for footage where audio says nothing useful."""
     import numpy as np
@@ -645,6 +670,16 @@ def load_motion(cfg, entry, meta, fps=2, size=(64, 36)):
     if meta.get("kind") != "local":
         raise Fail("visual analysis needs a local recording")
     w, h = size
+    cache = entry / "motion.json"
+    stamp = motion_stamp(meta, fps, size)
+    if cache.exists() and stamp:
+        try:
+            saved = json.loads(cache.read_text(encoding="utf-8"))
+            if all(saved.get(k) == v for k, v in stamp.items()):
+                return (np.asarray(saved["change"], dtype=np.float32),
+                        np.asarray(saved["brightness"], dtype=np.float32), 1.0 / fps)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
     proc = subprocess.run(
         [ffmpeg_path(cfg), "-hide_banner", "-loglevel", "error", "-i", meta["path"],
          "-an", "-vf", f"fps={fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
@@ -660,6 +695,15 @@ def load_motion(cfg, entry, meta, fps=2, size=(64, 36)):
     frames = frames[: count * w * h].reshape(count, h, w).astype(np.float32)
     change = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
     brightness = frames.mean(axis=(1, 2))[1:]
+    if stamp:
+        try:
+            cache.write_text(json.dumps({
+                **stamp,
+                "change": [round(float(v), 3) for v in change],
+                "brightness": [round(float(v), 2) for v in brightness],
+            }), encoding="utf-8")
+        except OSError:
+            pass
     return change, brightness, 1.0 / fps
 
 
@@ -691,7 +735,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1455,7 +1499,7 @@ def render_clip(cfg, entry, meta, data, start, end, args, flat_dir=None):
 
 def render_many(cfg, entry, meta, data, items, ns, flat_dir=None, workers=None):
     """Render several clips at once: ffmpeg decodes on the CPU while NVENC encodes on the GPU."""
-    limit = max(1, min(MAX_WORKERS, int(workers or cfg.get("render_workers", 2))))
+    limit = max(1, min(MAX_WORKERS, int(workers or cfg.get("render_workers", 1))))
     done, failed = {}, []
 
     def one(item):
