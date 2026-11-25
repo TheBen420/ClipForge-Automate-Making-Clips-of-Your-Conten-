@@ -874,10 +874,15 @@ def open_review_window(cfg, records, target, root=None, name=None):
         record["reason"] = previous.get("reason")
 
     status = tk.StringVar()
-    listing = tk.Listbox(window, height=12, bg="#141417", fg="#c9c9d1", selectbackground="#34343c",
+    body = ttk.Frame(window)
+    body.pack(fill="both", expand=True, padx=12, pady=(12, 6))
+    listing = tk.Listbox(body, height=12, bg="#141417", fg="#c9c9d1", selectbackground="#34343c",
                          selectforeground="#ffffff", relief="flat", font=("Consolas", 10),
                          activestyle="none", highlightthickness=1, highlightbackground="#2a2a30")
-    listing.pack(fill="both", expand=True, padx=12, pady=(12, 6))
+    bar = ttk.Scrollbar(body, orient="vertical", command=listing.yview)
+    listing.configure(yscrollcommand=bar.set)
+    listing.pack(side="left", fill="both", expand=True)
+    bar.pack(side="right", fill="y")
 
     def label_for(index):
         record = records[index]
@@ -907,9 +912,18 @@ def open_review_window(cfg, records, target, root=None, name=None):
         status.set(f"{kept} kept, {how_many} maybe, {dropped} rejected, {left} to go  -  "
                    f"space plays, k keeps, m maybe, then a reason or r to reject")
 
+    def show_position(_event=None):
+        selection = listing.curselection()
+        if not selection or not records:
+            return
+        position.set(f"row {int(selection[0]) + 1} of {len(records)}")
+
     def current():
         selection = listing.curselection()
         return int(selection[0]) if selection else None
+
+    position = tk.StringVar(value="")
+    listing.bind("<<ListboxSelect>>", show_position)
 
     def play():
         index = current()
@@ -957,7 +971,9 @@ def open_review_window(cfg, records, target, root=None, name=None):
                    command=lambda r=reason: judge("reject", r)).pack(side="left", padx=(0, 6))
     ttk.Button(why, text="No reason (r)", width=14,
                command=lambda: judge("reject")).pack(side="left")
-    ttk.Label(window, textvariable=status, style="Muted.TLabel").pack(fill="x", padx=12, pady=(8, 10))
+    ttk.Label(window, textvariable=status, style="Muted.TLabel").pack(fill="x", padx=12, pady=(8, 2))
+    ttk.Label(window, textvariable=position, style="Muted.TLabel").pack(fill="x", padx=12,
+                                                                       pady=(0, 10))
     ttk.Label(window, text=f"run: {target}", foreground=MUTED, background=BG).pack(fill="x", padx=12, pady=(0, 8))
 
     window.bind("<space>", lambda _event: play())
