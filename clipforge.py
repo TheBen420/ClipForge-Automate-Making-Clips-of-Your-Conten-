@@ -760,7 +760,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1683,11 +1683,38 @@ def write_session(cfg, mode, source, entry, clips, signals, seconds, extra=None)
     return path
 
 
-def record_feedback(cfg, clip, verdict, record):
-    """Append a keep/reject judgement next to the scores that produced the clip."""
+FEEDBACK_SCHEMA = 2
+# fixed set so the tallies stay comparable across batches; the GUI shows these as buttons
+REJECT_REASONS = ("boring", "cut off", "wrong moment", "framing")
+
+
+def top_signal(features, weights):
+    """Which signal carried a window's score, and how much of the total it was."""
+    scored = {}
+    for name, value in (features or {}).items():
+        weight = float((weights or {}).get(name, 0) or 0)
+        if weight and value is not None:
+            scored[name] = weight * float(value)
+    total = sum(abs(value) for value in scored.values())
+    if not scored or total < 1e-9:
+        return None
+    name = max(scored, key=lambda key: abs(scored[key]))
+    return {"signal": name, "share": round(abs(scored[name]) / total, 3)}
+
+
+def record_feedback(cfg, clip, verdict, record, reason=None):
+    """Append a judgement next to the scores and weighting that produced the clip.
+
+    Beyond keep or reject, a row carries why it was dropped, which weighting was in force
+    and which signal carried the pick, so a judgement can be replayed later against a
+    different set of signals instead of being a bare yes or no.
+    """
     entry = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "clip": str(clip),
-             "verdict": verdict}
+             "verdict": verdict, "schema": FEEDBACK_SCHEMA, "reason": reason or None}
     entry.update({k: v for k, v in (record or {}).items() if k not in ("when", "clip", "verdict")})
+    entry["weights"] = dict(entry.get("weights") or {})
+    entry["version"] = entry.get("version") or VERSION
+    entry["driven_by"] = top_signal(entry.get("features"), entry["weights"])
     with open(feedback_path(cfg), "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry) + "\n")
 
@@ -1709,7 +1736,11 @@ def load_feedback(cfg):
 
 
 def signal_split(feedback):
-    """Per-signal kept vs rejected means, how far apart they sit, and the sample counts."""
+    """Per-signal kept vs rejected means, how far apart they sit, and the sample counts.
+
+    A "maybe" counts half a keep: a clip you would have taken at a push should nudge the
+    weighting rather than teach it to dislike the signal that found it.
+    """
     import numpy as np
 
     names = set()
@@ -1717,13 +1748,24 @@ def signal_split(feedback):
         names.update((row.get("features") or {}).keys())
     table = {}
     for name in sorted(names):
-        kept = [row["features"][name] for row in feedback
-                if row.get("verdict") == "keep" and row.get("features", {}).get(name) is not None]
-        dropped = [row["features"][name] for row in feedback
-                   if row.get("verdict") == "reject" and row.get("features", {}).get(name) is not None]
+        kept, kept_weight, dropped = [], [], []
+        for row in feedback:
+            value = (row.get("features") or {}).get(name)
+            if value is None:
+                continue
+            verdict = row.get("verdict")
+            if verdict == "keep":
+                kept.append(value)
+                kept_weight.append(1.0)
+            elif verdict == "maybe":
+                kept.append(value)
+                kept_weight.append(0.5)
+            elif verdict == "reject":
+                dropped.append(value)
         if not kept or not dropped:
             continue
-        kept_mean, dropped_mean = float(np.mean(kept)), float(np.mean(dropped))
+        kept_mean = float(np.average(kept, weights=kept_weight))
+        dropped_mean = float(np.mean(dropped))
         if max(kept_mean, dropped_mean) < 1e-6:
             continue
         table[name] = {
@@ -1731,7 +1773,7 @@ def signal_split(feedback):
             "rejected": round(dropped_mean, 3),
             # signed and scale-free: +1 means the signal is pure signal, 0 means it is noise
             "separation": round((kept_mean - dropped_mean) / (kept_mean + dropped_mean + 1e-6), 2),
-            "n_kept": len(kept),
+            "n_kept": round(float(sum(kept_weight)), 1),
             "n_rejected": len(dropped),
         }
     return table
@@ -1786,7 +1828,11 @@ def cmd_stats(cfg, args):
 
     judged = len(feedback)
     kept = sum(1 for row in feedback if row.get("verdict") == "keep")
-    print(f"\nFeedback: {judged} clip(s) judged - {kept} kept ({kept / judged * 100:.0f}%)")
+    maybe = sum(1 for row in feedback if row.get("verdict") == "maybe")
+    line = f"\nFeedback: {judged} clip(s) judged - {kept} kept ({kept / judged * 100:.0f}%)"
+    if maybe:
+        line += f", {maybe} borderline"
+    print(line)
     by_rank = {}
     for row in feedback:
         rank = row.get("rank")
@@ -1810,6 +1856,17 @@ def cmd_stats(cfg, args):
         print("\nSeparation runs from -1 to 1: near 1 the signal picks what you keep and "
               "nothing else, near 0 it cannot tell them apart, and negative means it is "
               "picking clips you reject.")
+
+    reasons = {}
+    for row in feedback:
+        key = row.get("reason")
+        if key:
+            reasons[key] = reasons.get(key, 0) + 1
+    if reasons:
+        total_reasons = sum(reasons.values())
+        print("\nWhy clips were dropped:")
+        for key, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
+            print(f"  {key:<14} {count:>3}  ({count / total_reasons * 100:.0f}%)")
 
     multipliers = learned_multipliers(cfg)
     base = dict(cfg.get("weights") or {})

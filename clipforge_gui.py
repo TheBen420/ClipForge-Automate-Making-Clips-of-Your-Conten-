@@ -388,8 +388,14 @@ class App:
         buttons = ttk.Frame(body)
         buttons.pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Keep", command=lambda: self.judge("keep")).pack(fill="x")
-        ttk.Button(buttons, text="Reject", command=lambda: self.judge("reject")).pack(fill="x",
-                                                                                       pady=(6, 0))
+        ttk.Button(buttons, text="Borderline", command=lambda: self.judge("maybe")).pack(
+            fill="x", pady=(6, 0))
+        reasons = ttk.Frame(body)
+        reasons.pack(side="left", padx=(8, 0))
+        ttk.Label(reasons, text="Reject because", style="Muted.TLabel").pack(anchor="w")
+        for reason in cf.REJECT_REASONS:
+            ttk.Button(reasons, text=reason, width=14,
+                       command=lambda r=reason: self.judge("reject", r)).pack(fill="x", pady=(4, 0))
 
     def show_review(self, records):
         """Surface the clips of this run so a keep or reject is one click."""
@@ -403,7 +409,7 @@ class App:
         self.status_var.set(f"{len(self.clips_made)} clip(s) ready - judge them below, "
                             "or open the folder.")
 
-    def judge(self, verdict):
+    def judge(self, verdict, reason=None):
         selection = self.review_list.curselection()
         if not selection:
             return
@@ -411,9 +417,12 @@ class App:
         record = self.review_records[index]
         if record.get("verdict"):
             return
-        cf.record_feedback(self.cfg, record["path"], verdict, record)
+        cf.record_feedback(self.cfg, record["path"], verdict, record, reason=reason)
         record["verdict"] = verdict
-        mark = "kept   " if verdict == "keep" else "rejected"
+        record["reason"] = reason
+        mark = {"keep": "kept   ", "maybe": "maybe  "}.get(verdict, "rejected")
+        if reason:
+            mark = f"{mark} {reason[:10]:<10}"
         name = Path(record["path"]).name
         self.review_list.delete(index)
         self.review_list.insert(index, f"{mark} {name}")
@@ -721,7 +730,8 @@ class App:
             self.clips_made.append(self.run_dir)
             records.append({"path": str(clip), "entry": entry.name, "start": item["start"],
                             "end": item["end"], "rank": item["rank"], "score": item["score"],
-                            "features": item["features"]})
+                            "features": item["features"], "weights": summary.get("weights"),
+                            "preset": opts.get("preset"), "version": cf.VERSION})
         session = cf.write_session(self.cfg, "folder", str(path), entry.name, records,
                                    summary, time.time() - started,
                                    {"preset": opts.get("preset"), "count": opts["count"],
@@ -774,7 +784,8 @@ class App:
             self.clips_made.append(self.run_dir)
             records.append({"path": str(clip), "entry": entry.name, "start": item["start"],
                             "end": item["end"], "rank": item["rank"], "score": item["score"],
-                            "features": item["features"]})
+                            "features": item["features"], "weights": summary.get("weights"),
+                            "preset": opts.get("preset"), "version": cf.VERSION})
         session = cf.write_session(self.cfg, "vod", url, entry.name, records, summary,
                                    time.time() - started,
                                    {"preset": opts.get("preset"), "count": opts["count"],
@@ -902,9 +913,11 @@ def open_review_window(cfg, records, target, root=None):
     window.configure(bg=BG)
     window.geometry("760x420")
 
-    judged = {str(row.get("clip") or ""): row.get("verdict") for row in cf.load_feedback(cfg)}
+    judged = {str(row.get("clip") or ""): row for row in cf.load_feedback(cfg)}
     for record in records:
-        record["verdict"] = judged.get(record["path"])
+        previous = judged.get(record["path"]) or {}
+        record["verdict"] = previous.get("verdict")
+        record["reason"] = previous.get("reason")
 
     status = tk.StringVar()
     listing = tk.Listbox(window, height=12, bg="#141417", fg="#c9c9d1", selectbackground="#34343c",
@@ -914,7 +927,11 @@ def open_review_window(cfg, records, target, root=None):
 
     def label_for(index):
         record = records[index]
-        mark = {"keep": "kept    ", "reject": "rejected"}.get(record.get("verdict"), "unjudged")
+        mark = {"keep": "kept    ", "maybe": "maybe   ",
+                "reject": "rejected"}.get(record.get("verdict"), "unjudged")
+        reason = record.get("reason")
+        if reason:
+            mark = f"{mark} {reason:<12}"
         length = record.get("duration")
         suffix = f"  {float(length):.0f}s" if length else ""
         return f"{mark}  {Path(record['path']).name}{suffix}"
@@ -924,16 +941,17 @@ def open_review_window(cfg, records, target, root=None):
         for index in range(len(records)):
             listing.insert("end", label_for(index))
         kept = sum(1 for row in records if row.get("verdict") == "keep")
+        how_many = sum(1 for row in records if row.get("verdict") == "maybe")
         dropped = sum(1 for row in records if row.get("verdict") == "reject")
-        left = len(records) - kept - dropped
+        left = len(records) - kept - how_many - dropped
         if select_first_unjudged:
             for index, record in enumerate(records):
                 if not record.get("verdict"):
                     listing.selection_set(index)
                     listing.see(index)
                     break
-        status.set(f"{kept} kept, {dropped} rejected, {left} to go  -  "
-                   f"space plays, k keeps, r rejects")
+        status.set(f"{kept} kept, {how_many} borderline, {dropped} rejected, {left} to go  -  "
+                   f"space plays, k keeps, m borderline, then a reason or r to reject")
 
     def current():
         selection = listing.curselection()
@@ -947,14 +965,15 @@ def open_review_window(cfg, records, target, root=None):
             except OSError as exc:
                 messagebox.showwarning("ClipForge", f"Can't play that file\n\n{exc}")
 
-    def judge(verdict):
+    def judge(verdict, reason=None):
         index = current()
         if index is None:
             return
         record = records[index]
         if not record.get("verdict"):
-            cf.record_feedback(cfg, record["path"], verdict, record)
+            cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
             record["verdict"] = verdict
+            record["reason"] = reason
         refresh(select_first_unjudged=True)
 
     def open_folder():
@@ -964,14 +983,29 @@ def open_review_window(cfg, records, target, root=None):
     buttons.pack(fill="x", padx=12)
     ttk.Button(buttons, text="Play (space)", command=play).pack(side="left")
     ttk.Button(buttons, text="Keep (k)", command=lambda: judge("keep")).pack(side="left", padx=(8, 0))
-    ttk.Button(buttons, text="Reject (r)", command=lambda: judge("reject")).pack(side="left", padx=(8, 0))
+    ttk.Button(buttons, text="Borderline (m)",
+               command=lambda: judge("maybe")).pack(side="left", padx=(8, 0))
     ttk.Button(buttons, text="Open folder", command=open_folder).pack(side="right")
+
+    why = ttk.Frame(window)
+    why.pack(fill="x", padx=12, pady=(8, 0))
+    ttk.Label(why, text="Rejected because", style="Muted.TLabel").pack(side="left", padx=(0, 8))
+    for reason in cf.REJECT_REASONS:
+        keys = "".join(word[0] for word in reason.split())
+        ttk.Button(why, text=f"{reason} ({keys})", width=20,
+                   command=lambda r=reason: judge("reject", r)).pack(side="left", padx=(0, 6))
+    ttk.Button(why, text="No reason (r)", width=14,
+               command=lambda: judge("reject")).pack(side="left")
     ttk.Label(window, textvariable=status, style="Muted.TLabel").pack(fill="x", padx=12, pady=(8, 10))
     ttk.Label(window, text=f"run: {target}", foreground=MUTED, background=BG).pack(fill="x", padx=12, pady=(0, 8))
 
     window.bind("<space>", lambda _event: play())
     window.bind("k", lambda _event: judge("keep"))
+    window.bind("m", lambda _event: judge("maybe"))
     window.bind("r", lambda _event: judge("reject"))
+    for reason in cf.REJECT_REASONS:
+        keys = "".join(word[0] for word in reason.split())
+        window.bind(keys, lambda _event, r=reason: judge("reject", r))
     listing.bind("<Double-Button-1>", lambda _event: play())
 
     refresh(select_first_unjudged=True)
