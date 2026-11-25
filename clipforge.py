@@ -557,13 +557,30 @@ def download_audio(cfg, entry, meta):
     src.unlink(missing_ok=True)
 
 
+def read_audio(wav, rate=AUDIO_RATE):
+    """The cached wav as float32 in [-1, 1], so whisper never reaches for its own decoder.
+
+    faster-whisper decodes a path through PyAV, and PyAV 19 dropped the metadata_errors
+    argument 1.2.1 still passes it, so handing over samples keeps a working install working
+    when a dependency moves under it.
+    """
+    import numpy as np
+
+    with wave.open(str(wav), "rb") as fh:
+        if fh.getframerate() != rate or fh.getnchannels() != 1:
+            raise Fail(f"{Path(wav).name} is {fh.getframerate()} Hz "
+                       f"{fh.getnchannels()}-channel, expected {rate} Hz mono")
+        raw = fh.readframes(fh.getnframes())
+    return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def transcribe(entry, meta, wav, model_name, language, prompt=None):
     """Run whisper under the engine lock and persist the transcript."""
     model, location = whisper_model(None, model_name)
     print(f"  device: {location}")
     with _ENGINE_LOCK:
         segments, info = model.transcribe(
-            str(wav),
+            read_audio(wav),
             language=language or "en",
             word_timestamps=True,
             vad_filter=True,
@@ -760,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
