@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -2116,6 +2116,31 @@ def cmd_update(cfg, args):
     return 0
 
 
+def whisper_probe(cfg):
+    """Load the model and actually run one second through it.
+
+    Loading alone proves nothing: ctranslate2 resolves cuBLAS at the first encode, so a
+    machine with a broken CUDA runtime reports a healthy model right up until the first
+    transcript. One second of silence is enough to make it fail here instead of an hour in.
+    """
+    model, where = whisper_model(cfg, cfg["model"])
+    import numpy as np
+
+    audio = np.zeros(AUDIO_RATE, dtype=np.float32)
+    try:
+        segments, _ = model.transcribe(audio, language="en", beam_size=1)
+        next(iter(segments), None)
+    except Exception as exc:  # noqa: BLE001 - the message is the useful part
+        detail = str(exc) or exc.__class__.__name__
+        if where.startswith("cuda"):
+            raise Fail(f"{where} loads but cannot run ({detail}) - install a CUDA runtime "
+                       f"with `{Path(sys.executable).name} -m pip install "
+                       f"nvidia-cublas-cu12 \"nvidia-cudnn-cu12==9.*\"`, or set "
+                       f"CLIPFORGE_DEVICE=cpu")
+        raise Fail(f"{where} cannot run: {detail}")
+    return f"ran a one-second sample on {where}"
+
+
 def cmd_doctor(cfg, args):
     ok = True
 
@@ -2142,7 +2167,7 @@ def cmd_doctor(cfg, args):
     check("libass subtitles", lambda: "available" if " ass " in
           run([ffmpeg_path(cfg), "-hide_banner", "-filters"]).stdout else "MISSING")
     check("yt-dlp", lambda: run([sys.executable, "-m", "yt_dlp", "--version"]).stdout.strip())
-    check("whisper", lambda: (lambda m: f"loaded on {m[1]}")(whisper_model(cfg, cfg["model"])))
+    check("whisper", lambda: whisper_probe(cfg))
     root = media_root(cfg)
     free = shutil.disk_usage(root).free
     print(f"  [ok]   media root: {root} ({human_size(free)} free)")
