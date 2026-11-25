@@ -29,6 +29,8 @@ MUTED = "#9a9aa2"
 ACCENT = "#3ba55d"
 RAIL = "#101013"
 RAIL_ON = "#23242b"
+PANEL = "#191a1e"
+BORDER = "#2c2d34"
 FIELD = "#2a2a30"
 
 
@@ -146,8 +148,8 @@ class App:
         self.run_dir = None
         root.title("ClipForge")
         apply_icon(root)
-        root.geometry("1060x845")
-        root.minsize(980, 700)
+        root.geometry("1080x950")
+        root.minsize(980, 740)
         root.configure(bg=BG)
         self.build_styles()
 
@@ -167,12 +169,16 @@ class App:
         self.page_note = ttk.Label(titles, text="Clips land in one folder, named after the source video.",
                                    style="Muted.TLabel")
         self.page_note.pack(anchor="w")
+        self.hardware_pill = tk.Label(head, text="checking hardware", bg=RAIL_ON, fg=MUTED,
+                                      font=("Segoe UI", 8), padx=10, pady=4)
+        self.hardware_pill.pack(side="right")
 
         self.pages = {key: ttk.Frame(self.content, padding=(22, 10, 22, 16))
                       for key in ("make", "judge", "stats")}
 
         make = self.pages["make"]
-        self.nb = ttk.Notebook(make)
+        source = self.section(make, "Source")
+        self.nb = ttk.Notebook(source)
         self.nb.pack(fill="x")
         self.build_folder_tab()
         self.build_vod_tab()
@@ -281,12 +287,19 @@ class App:
                    ).pack(anchor="w", pady=(10, 0))
 
     def refresh_judge_page(self):
-        try:
-            unjudged = cf.unjudged_clips(self.cfg)
-            total = len(cf.disk_clips(self.cfg))
-        except cf.Fail:
-            unjudged, total = [], 0
-        self.judge_count.configure(text=f"{total} clip(s) on disk  ·  {len(unjudged)} never judged")
+        """Counting clips is a directory walk, not a probe: keep it off the click."""
+        self.judge_count.configure(text="counting clips…")
+
+        def run():
+            try:
+                unjudged = len(cf.unjudged_clips(self.cfg, durations=False))
+                total = len(cf.disk_clips(self.cfg, durations=False))
+                self.queue.put(("judge_count", f"{total} clip(s) on disk  ·  "
+                                               f"{unjudged} never judged"))
+            except cf.Fail as exc:
+                self.queue.put(("judge_count", f"could not read the library: {exc}"))
+
+        threading.Thread(target=run, daemon=True).start()
 
     def judge_last_run(self):
         try:
@@ -379,10 +392,18 @@ class App:
         ttk.Checkbutton(tab, text="Use Twitch chat hype (leans on the messages at the peak)",
                         variable=self.chat_var).pack(anchor="w", pady=(8, 0))
 
-    def build_options(self, parent):
-        opts = ttk.Frame(parent)
-        opts.pack(fill="x", pady=(14, 0))
+    def section(self, parent, title, expand=False):
+        """A bordered block with a small heading, the way the mockup groups things."""
+        card = tk.Frame(parent, bg=BG, highlightthickness=1, highlightbackground=BORDER)
+        card.pack(fill="both" if expand else "x", expand=expand, pady=(0, 9))
+        if title:
+            tk.Label(card, text=title, bg=BG, fg="#6b6c76", font=("Segoe UI", 8),
+                     anchor="w").pack(fill="x", padx=14, pady=(10, 0))
+        inner = tk.Frame(card, bg=BG)
+        inner.pack(fill="both" if expand else "x", expand=expand, padx=14, pady=(5, 9))
+        return inner
 
+    def build_options(self, parent):
         self.fit_var = tk.StringVar(value=self.cfg["fit"])
         self.cap_var = tk.StringVar(value=self.cfg["captions"])
         self.count_var = tk.StringVar(value="2")
@@ -390,72 +411,85 @@ class App:
         self.preset_var = tk.StringVar(value="auto")
         self.preset_var.trace_add("write", self.apply_preset)
 
-        def labelled(text, widget):
-            box = ttk.Frame(opts)
-            box.pack(side="left", padx=(0, 18))
+        body = self.section(parent, "How to cut them")
+        grid = tk.Frame(body, bg=BG)
+        grid.pack(fill="x")
+
+        def labelled(text, column, widget):
+            box = ttk.Frame(grid)
+            box.grid(row=0, column=column, sticky="ew", padx=(0, 14))
+            grid.columnconfigure(column, weight=1)
             ttk.Label(box, text=text, style="Muted.TLabel").pack(anchor="w")
             widget(box)
 
-        labelled("Framing", lambda p: ttk.Combobox(p, textvariable=self.fit_var, width=9,
-                                                   state="readonly",
-                                                   values=["blur", "crop", "black"]).pack())
-        labelled("Captions", lambda p: ttk.Combobox(p, textvariable=self.cap_var, width=10,
-                                                    state="readonly",
-                                                    values=["karaoke", "block", "off"]).pack())
-        labelled("Clips to make", lambda p: ttk.Combobox(p, textvariable=self.count_var, width=5,
-                                                         state="readonly",
-                                                         values=[str(n) for n in range(1, 21)]
-                                                         ).pack())
-        labelled("Clip length (s)", lambda p: ttk.Combobox(p, textvariable=self.length_var, width=5,
-                                                           state="readonly",
-                                                           values=["15", "20", "25", "30", "45",
-                                                                   "60"]).pack())
+        labelled("Framing", 0, lambda p: ttk.Combobox(p, textvariable=self.fit_var, width=9,
+                                                      state="readonly",
+                                                      values=["blur", "crop", "black"]).pack(
+            fill="x"))
+        labelled("Captions", 1, lambda p: ttk.Combobox(p, textvariable=self.cap_var, width=10,
+                                                       state="readonly",
+                                                       values=["karaoke", "block", "off"]).pack(
+            fill="x"))
+        labelled("Clips to make", 2, lambda p: ttk.Combobox(
+            p, textvariable=self.count_var, width=5, state="readonly",
+            values=[str(n) for n in range(1, 21)]).pack(fill="x"))
+        labelled("Clip length", 3, lambda p: ttk.Combobox(
+            p, textvariable=self.length_var, width=5, state="readonly",
+            values=["15", "20", "25", "30", "45", "60"]).pack(fill="x"))
+        labelled("Content type", 4, lambda p: ttk.Combobox(
+            p, textvariable=self.preset_var, width=13, state="readonly",
+            values=["auto"] + list((self.cfg.get("presets") or {}).keys())).pack(fill="x"))
+
+        second = tk.Frame(body, bg=BG)
+        second.pack(fill="x", pady=(12, 0))
         self.model_var = tk.StringVar(value=self.cfg.get("model", "medium.en"))
-        labelled("Transcription", lambda p: ttk.Combobox(p, textvariable=self.model_var, width=11,
-                                                         state="readonly",
-                                                         values=["small.en", "medium.en",
-                                                                 "large-v3"]).pack())
         self.model_var.trace_add("write", self.save_model)
         self.fps_var = tk.StringVar(value="auto")
-        labelled("Frame rate", lambda p: ttk.Combobox(p, textvariable=self.fps_var, width=7,
-                                                      state="readonly",
-                                                      values=["auto", "60", "30"]).pack())
-        labelled("Content type", lambda p: ttk.Combobox(p, textvariable=self.preset_var, width=13,
-                                                        state="readonly",
-                                                        values=["auto"] + list(
-                                                            (self.cfg.get("presets") or {}).keys())
-                                                        ).pack())
+
+        def labelled_second(text, column, widget):
+            box = ttk.Frame(second)
+            box.grid(row=0, column=column, sticky="ew", padx=(0, 14))
+            second.columnconfigure(column, weight=1)
+            ttk.Label(box, text=text, style="Muted.TLabel").pack(anchor="w")
+            widget(box)
+
+        labelled_second("Transcription", 0, lambda p: ttk.Combobox(
+            p, textvariable=self.model_var, width=11, state="readonly",
+            values=["small.en", "medium.en", "large-v3"]).pack(fill="x"))
+        labelled_second("Frame rate", 1, lambda p: ttk.Combobox(
+            p, textvariable=self.fps_var, width=7, state="readonly",
+            values=["auto", "60", "30"]).pack(fill="x"))
         self.apply_preset()
 
-        vocab = ttk.Frame(parent)
-        vocab.pack(fill="x", pady=(10, 0))
-        ttk.Label(vocab, text="Vocabulary", style="Muted.TLabel").pack(side="left", padx=(0, 8))
+        vocab = tk.Frame(body, bg=BG)
+        vocab.pack(fill="x", pady=(12, 0))
+        ttk.Label(vocab, text="Vocabulary", style="Muted.TLabel").pack(anchor="w")
+        line = tk.Frame(vocab, bg=BG)
+        line.pack(fill="x", pady=(3, 0))
         self.prompt_var = tk.StringVar(value=self.cfg.get("prompt", ""))
-        entry = tk.Entry(vocab, textvariable=self.prompt_var, font=("Segoe UI", 10), bg=FIELD,
+        entry = tk.Entry(line, textvariable=self.prompt_var, font=("Segoe UI", 10), bg=FIELD,
                          fg=FG, insertbackground=FG, relief="flat", highlightthickness=1,
                          highlightbackground="#3a3a42", highlightcolor=ACCENT)
         entry.pack(side="left", fill="x", expand=True, ipady=5)
         self.prompt_var.trace_add("write", self.save_vocabulary)
-        ttk.Label(parent, style="Muted.TLabel", wraplength=790, justify="left",
-                  text="Vocabulary: names and terms it keeps mis-hearing, comma separated. It "
-                       "biases the transcript toward them and improves punctuation too."
-                  ).pack(anchor="w", pady=(4, 0))
+        tk.Label(vocab, text="Names it keeps mis-hearing, comma separated", bg=BG, fg="#6b6c76",
+                 font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
 
     def build_destination(self, parent):
-        row = ttk.Frame(parent)
-        row.pack(fill="x", pady=(14, 0))
-        ttk.Label(row, text="Save clips to", style="Muted.TLabel").pack(side="left", padx=(0, 8))
+        body = self.section(parent, "Save clips to")
+        row = tk.Frame(body, bg=BG)
+        row.pack(fill="x")
         self.output_var = tk.StringVar(value=self.default_output())
         self.text_entry(row, self.output_var)
         ttk.Button(row, text="Choose…", command=self.browse_output).pack(side="left")
 
         self.subfolder_var = tk.BooleanVar(value=bool(self.cfg.get("clip_output_subfolder", True)))
-        ttk.Checkbutton(parent, text="Put clips in a subfolder named after the source",
+        ttk.Checkbutton(body, text="Put clips in a subfolder named after the source",
                         variable=self.subfolder_var).pack(anchor="w", pady=(8, 0))
 
     def build_actions(self, parent):
-        actions = ttk.Frame(parent)
-        actions.pack(fill="x", pady=(16, 10))
+        actions = tk.Frame(parent, bg=BG)
+        actions.pack(fill="x", pady=(0, 10))
         self.go_btn = ttk.Button(actions, text="Make Clips", style="Go.TButton", command=self.start)
         self.go_btn.pack(side="left")
         self.stop_btn = ttk.Button(actions, text="Stop", command=self.request_stop, state="disabled")
@@ -555,7 +589,7 @@ class App:
         threading.Thread(target=run, daemon=True).start()
 
     def build_log(self, parent):
-        self.log = ScrolledText(parent, height=9, bg="#141417", fg="#c9c9d1", relief="flat",
+        self.log = ScrolledText(parent, height=8, bg="#141417", fg="#c9c9d1", relief="flat",
                                 font=("Consolas", 9), insertbackground=FG, wrap="word",
                                 highlightthickness=1, highlightbackground="#2a2a30")
         self.log.pack(fill="both", expand=True, pady=(8, 0))
@@ -585,6 +619,7 @@ class App:
         except cf.Fail as exc:
             device = f"unavailable ({exc})"
         self.queue.put(("log", f"encoder: {encoder}   whisper: {device}"))
+        self.queue.put(("hardware", f"{device}  ·  {encoder}"))
 
     def current_tab(self):
         return 1 if self.nb.index(self.nb.select()) == 1 else 0
@@ -964,6 +999,10 @@ class App:
                     if newer:
                         self.update_btn.configure(text=f"Version {latest} is out")
                         self.update_btn.pack(anchor="w", pady=(0, 6))
+                elif kind == "hardware":
+                    self.hardware_pill.configure(text=payload)
+                elif kind == "judge_count":
+                    self.judge_count.configure(text=payload)
                 elif kind == "stats":
                     self.stats_text.configure(state="normal")
                     self.stats_text.delete("1.0", "end")
@@ -994,15 +1033,16 @@ class App:
 
 
 def open_review_window(cfg, records, target, root=None, name=None):
-    """Judge a finished run, so a closed app never costs you the feedback."""
+    """Judge a run, laid out as a list of clips beside the verdict panel."""
     own_root = root is None
     window = tk.Tk() if own_root else tk.Toplevel(root)
     apply_dark_styles(window)
     apply_icon(window)
-    window.title(f"ClipForge - judge clips: {name}" if name
-                 else "ClipForge - judge clips")
+    title = f"ClipForge - judge clips: {name}" if name else "ClipForge - judge clips"
+    window.title(title)
     window.configure(bg=BG)
-    window.geometry("940x480")
+    window.geometry("1070x600")
+    window.minsize(880, 480)
 
     judged = {str(row.get("clip") or ""): row for row in cf.load_feedback(cfg)}
     for record in records:
@@ -1010,53 +1050,139 @@ def open_review_window(cfg, records, target, root=None, name=None):
         record["verdict"] = previous.get("verdict")
         record["reason"] = previous.get("reason")
 
+    head = tk.Frame(window, bg=BG)
+    head.pack(fill="x", padx=16, pady=(14, 8))
+    tk.Label(head, text=Path(str(target)).name or "clips", bg=BG, fg=FG,
+             font=("Segoe UI Semibold", 13)).pack(side="left")
     status = tk.StringVar()
-    body = ttk.Frame(window)
-    body.pack(fill="both", expand=True, padx=12, pady=(12, 6))
-    listing = tk.Listbox(body, height=12, bg="#141417", fg="#c9c9d1", selectbackground="#34343c",
-                         selectforeground="#ffffff", relief="flat", font=("Consolas", 10),
-                         activestyle="none", highlightthickness=1, highlightbackground="#2a2a30")
-    bar = ttk.Scrollbar(body, orient="vertical", command=listing.yview)
+    tk.Label(head, textvariable=status, bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(side="right")
+
+    search = tk.Frame(window, bg=BG)
+    search.pack(fill="x", padx=16, pady=(0, 8))
+    query = tk.StringVar()
+    field = tk.Entry(search, textvariable=query, font=("Segoe UI", 9), bg=FIELD, fg=FG,
+                     insertbackground=FG, relief="flat", highlightthickness=1,
+                     highlightbackground=BORDER, highlightcolor=ACCENT)
+    field.pack(side="left", fill="x", expand=True, ipady=4)
+    tk.Label(search, text="filter", bg=BG, fg="#6b6c76", font=("Segoe UI", 8)).pack(
+        side="left", padx=(8, 0))
+
+    body = tk.Frame(window, bg=BG)
+    body.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+
+    table_area = tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
+    table_area.pack(side="left", fill="both", expand=True)
+    columns = ("num", "clip", "at", "len", "score", "verdict")
+    listing = ttk.Treeview(table_area, columns=columns, show="headings", selectmode="browse")
+    for key, text, width, anchor in (("num", "#", 40, "center"), ("clip", "Clip", 330, "w"),
+                                     ("at", "At", 88, "w"), ("len", "Len", 52, "w"),
+                                     ("score", "Score", 62, "e"), ("verdict", "Verdict", 140, "w")):
+        listing.heading(key, text=text)
+        listing.column(key, width=width, anchor=anchor, stretch=(key == "clip"))
+    bar = ttk.Scrollbar(table_area, orient="vertical", command=listing.yview)
     listing.configure(yscrollcommand=bar.set)
     listing.pack(side="left", fill="both", expand=True)
     bar.pack(side="right", fill="y")
+    style = ttk.Style()
+    style.configure("Treeview", background=FIELD, fieldbackground=FIELD, foreground=FG,
+                    rowheight=26, borderwidth=0)
+    style.configure("Treeview.Heading", background=PANEL, foreground=MUTED,
+                    font=("Segoe UI", 9), borderwidth=0)
+    style.map("Treeview", background=[("selected", "#2f3a33")],
+              foreground=[("selected", "#ffffff")])
+    listing.tag_configure("keep", foreground="#6ddc90")
+    listing.tag_configure("maybe", foreground="#dfc069")
+    listing.tag_configure("reject", foreground="#e08a8a")
+    listing.tag_configure("none", foreground="#c9c9d1")
 
-    def label_for(index):
-        record = records[index]
-        mark = {"keep": "kept    ", "maybe": "maybe   ",
-                "reject": "rejected"}.get(record.get("verdict"), "unjudged")
-        reason = record.get("reason")
-        if reason:
-            mark = f"{mark} {reason:<12}"
-        length = record.get("duration")
-        suffix = f"  {float(length):.0f}s" if length else ""
-        return f"{mark}  {Path(record['path']).name}{suffix}"
+    panel = tk.Frame(body, bg=PANEL, width=274, highlightthickness=1,
+                     highlightbackground=BORDER)
+    panel.pack(side="right", fill="y", padx=(12, 0))
+    panel.pack_propagate(False)
+
+    def panel_label(text, pady=(0, 4), color=MUTED, size=8):
+        tk.Label(panel, text=text, bg=PANEL, fg=color, font=("Segoe UI", size),
+                 justify="left", wraplength=246).pack(anchor="w", padx=14, pady=pady)
+
+    actions = tk.Frame(panel, bg=PANEL)
+    actions.pack(fill="x", padx=14, pady=(14, 4))
+    tk.Button(actions, text="Keep  k", relief="flat", bd=0, bg=ACCENT, fg="#0b1a10",
+              activebackground="#45b96a", font=("Segoe UI Semibold", 10), padx=10, pady=6,
+              cursor="hand2", command=lambda: judge("keep")).pack(side="left")
+    tk.Button(actions, text="Maybe  m", relief="flat", bd=0, bg=FIELD, fg=FG,
+              activebackground="#33333a", font=("Segoe UI", 10), padx=10, pady=6,
+              cursor="hand2", command=lambda: judge("maybe")).pack(side="left", padx=(6, 0))
+
+    panel_label("Rejected because", pady=(12, 4))
+    for reason in cf.REJECT_REASONS:
+        key = cf.REASON_KEYS[reason]
+        tk.Button(panel, text=f"{reason}   {key}", anchor="w", relief="flat", bd=0,
+                  bg=FIELD, fg=FG, activebackground="#33333a", font=("Segoe UI", 9),
+                  padx=9, pady=5, cursor="hand2",
+                  command=lambda r=reason: judge("reject", r)).pack(fill="x", padx=14, pady=1)
+    panel_label("boring and wrong moment blame the signals. late start, cut short and "
+                "bad edit blame the window.", pady=(10, 0), color="#6b6c76")
+
+    counts = tk.StringVar()
+    tk.Label(panel, textvariable=counts, bg=PANEL, fg=MUTED, justify="left", anchor="w",
+             font=("Consolas", 9)).pack(anchor="w", padx=14, pady=(14, 0))
+
+    position = tk.StringVar(value="")
+    foot = tk.Frame(window, bg=BG)
+    foot.pack(fill="x", padx=16, pady=(0, 12))
+    tk.Label(foot, textvariable=position, bg=BG, fg=MUTED, font=("Segoe UI", 9),
+             anchor="w").pack(side="left")
+    tk.Button(foot, text="Play  space", relief="flat", bd=0, bg=FIELD, fg=FG, padx=12, pady=4,
+              command=lambda: play(), cursor="hand2").pack(side="right")
+    tk.Button(foot, text="Open folder", relief="flat", bd=0, bg=FIELD, fg=FG, padx=12, pady=4,
+              command=lambda: cf.open_folder(Path(records[0]["path"]).parent),
+              cursor="hand2").pack(side="right", padx=(0, 6))
+
+    def verdict_text(record):
+        if not record.get("verdict"):
+            return "unjudged"
+        if record.get("verdict") == "reject":
+            return "rejected · " + (record.get("reason") or "no reason")
+        return record["verdict"]
+
+    def row_values(index, record):
+        at = cf.fmt_ts(float(record["start"])) if record.get("start") is not None else ""
+        length = f"{float(record['duration']):.0f}s" if record.get("duration") else ""
+        score = f"{float(record['score']):.2f}" if record.get("score") is not None else ""
+        return (index + 1, Path(record["path"]).name, at, length, score, verdict_text(record))
 
     def refresh(select=None, select_first_unjudged=False):
-        listing.delete(0, "end")
-        for index in range(len(records)):
-            listing.insert("end", label_for(index))
+        listing.delete(*listing.get_children())
+        needle = query.get().strip().lower()
+        for index, record in enumerate(records):
+            values = row_values(index, record)
+            if needle and needle not in str(values[1]).lower() and needle not in str(values[5]).lower():
+                continue
+            listing.insert("", "end", iid=str(index), values=values,
+                           tags=(record.get("verdict") or "none",))
         kept = sum(1 for row in records if row.get("verdict") == "keep")
         how_many = sum(1 for row in records if row.get("verdict") == "maybe")
         dropped = sum(1 for row in records if row.get("verdict") == "reject")
         left = len(records) - kept - how_many - dropped
-        target = None
+        status.set(f"{kept} kept  ·  {how_many} maybe  ·  {dropped} rejected  ·  {left} to go")
+        reasoned = sum(1 for row in records if row.get("reason"))
+        counts.set(chr(10).join([f"judged {len(records) - left} of {len(records)}",
+                                f"reasons {reasoned}"]))
+        target_index = None
         if select_first_unjudged:
-            target = next((index for index, record in enumerate(records)
-                           if not record.get("verdict")), None)
+            target_index = next((i for i, row in enumerate(records) if not row.get("verdict")),
+                                None)
         elif select is not None:
-            target = select
-        if target is not None and records:
-            target = min(max(target, 0), len(records) - 1)
-            listing.selection_set(target)
-            listing.see(target)
+            target_index = select
+        if target_index is not None and records:
+            target_index = min(max(target_index, 0), len(records) - 1)
+            listing.selection_set(str(target_index))
+            listing.see(str(target_index))
             show_position()
-        status.set(f"{kept} kept, {how_many} maybe, {dropped} rejected, {left} to go  -  "
-                   f"space plays, k keeps, m maybe, then a reason or r to reject")
 
     def show_position(_event=None):
-        selection = listing.curselection()
-        if not selection or not records:
+        selection = listing.selection()
+        if not selection:
             return
         index = int(selection[0])
         line = f"row {index + 1} of {len(records)}"
@@ -1066,19 +1192,17 @@ def open_review_window(cfg, records, target, root=None, name=None):
         position.set(line)
 
     def current():
-        selection = listing.curselection()
+        selection = listing.selection()
         return int(selection[0]) if selection else None
-
-    position = tk.StringVar(value="")
-    listing.bind("<<ListboxSelect>>", show_position)
 
     def play():
         index = current()
-        if index is not None:
-            try:
-                os.startfile(records[index]["path"])
-            except OSError as exc:
-                messagebox.showwarning("ClipForge", f"Can't play that file\n\n{exc}")
+        if index is None:
+            return
+        try:
+            os.startfile(records[index]["path"])
+        except OSError as exc:
+            messagebox.showwarning("ClipForge", f"Can't play that file - {exc}")
 
     def judge(verdict, reason=None):
         index = current()
@@ -1098,30 +1222,8 @@ def open_review_window(cfg, records, target, root=None, name=None):
         record["reason"] = reason
         refresh(select=index + 1)
 
-    def open_folder():
-        cf.open_folder(Path(records[0]["path"]).parent)
-
-    buttons = ttk.Frame(window)
-    buttons.pack(fill="x", padx=12)
-    ttk.Button(buttons, text="Play (space)", command=play).pack(side="left")
-    ttk.Button(buttons, text="Keep (k)", command=lambda: judge("keep")).pack(side="left", padx=(8, 0))
-    ttk.Button(buttons, text="Maybe (m)",
-               command=lambda: judge("maybe")).pack(side="left", padx=(8, 0))
-    ttk.Button(buttons, text="Open folder", command=open_folder).pack(side="right")
-
-    why = ttk.Frame(window)
-    why.pack(fill="x", padx=12, pady=(8, 0))
-    ttk.Label(why, text="Rejected because", style="Muted.TLabel").pack(side="left", padx=(0, 8))
-    for reason in cf.REJECT_REASONS:
-        ttk.Button(why, text=f"{reason} ({cf.REASON_KEYS[reason]})", width=16,
-                   command=lambda r=reason: judge("reject", r)).pack(side="left", padx=(0, 6))
-    ttk.Button(why, text="No reason (r)", width=14,
-               command=lambda: judge("reject")).pack(side="left")
-    ttk.Label(window, textvariable=status, style="Muted.TLabel").pack(fill="x", padx=12, pady=(8, 2))
-    ttk.Label(window, textvariable=position, style="Muted.TLabel").pack(fill="x", padx=12,
-                                                                       pady=(0, 10))
-    ttk.Label(window, text=f"run: {target}", foreground=MUTED, background=BG).pack(fill="x", padx=12, pady=(0, 8))
-
+    listing.bind("<<TreeviewSelect>>", show_position)
+    query.trace_add("write", lambda *_args: refresh(select=current()))
     window.bind("<space>", lambda _event: play())
     window.bind("k", lambda _event: judge("keep"))
     window.bind("m", lambda _event: judge("maybe"))
@@ -1131,6 +1233,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
     listing.bind("<Double-Button-1>", lambda _event: play())
 
     refresh(select_first_unjudged=True)
+    window.focus_set()
     if own_root:
         window.mainloop()
         kept = sum(1 for row in records if row.get("verdict") == "keep")

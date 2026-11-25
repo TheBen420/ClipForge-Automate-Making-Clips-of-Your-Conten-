@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1742,7 +1742,8 @@ def record_feedback(cfg, clip, verdict, record, reason=None):
     """
     entry = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "clip": str(clip),
              "verdict": verdict, "schema": FEEDBACK_SCHEMA, "reason": reason or None}
-    entry.update({k: v for k, v in (record or {}).items() if k not in ("when", "clip", "verdict")})
+    entry.update({k: v for k, v in (record or {}).items()
+                  if k not in ("when", "clip", "verdict", "reason", "schema")})
     entry["weights"] = dict(entry.get("weights") or {})
     entry["version"] = entry.get("version") or VERSION
     entry["driven_by"] = top_signal(entry.get("features"), entry["weights"])
@@ -2226,12 +2227,13 @@ def latest_session(cfg):
     return files[-1] if files else None
 
 
-def unjudged_clips(cfg):
-    """Every clip on disk that has no judgement yet, newest folder last.
+def unjudged_clips(cfg, durations=True):
+    """Every clip on disk that has no judgement yet, oldest folder first.
 
     Old runs are still worth judging: a clip's verdict teaches the weighting whether it
     was made today or a fortnight ago, and the reasons only get recorded if the clips are
-    offered again.
+    offered again. Durations cost an ffprobe per file, so a caller that only wants the count
+    asks for none.
     """
     judged = {str(row.get("clip") or "") for row in load_feedback(cfg)}
     rows = []
@@ -2242,15 +2244,17 @@ def unjudged_clips(cfg):
         for path in sorted(root.rglob("*.mp4")):
             if str(path) in judged:
                 continue
-            try:
-                duration = round(probe(cfg, path)["duration"], 1)
-            except (Fail, ValueError, KeyError):
-                duration = None
+            duration = None
+            if durations:
+                try:
+                    duration = round(probe(cfg, path)["duration"], 1)
+                except (Fail, ValueError, KeyError):
+                    duration = None
             rows.append({"path": str(path), "entry": None, "duration": duration})
     return rows
 
 
-def disk_clips(cfg):
+def disk_clips(cfg, durations=True):
     """Every clip on disk with whatever has been judged about it so far.
 
     Re-judging an old batch is worth doing once the ways of judging improve, so the earlier
@@ -2264,10 +2268,12 @@ def disk_clips(cfg):
             continue
         for path in sorted(root.rglob("*.mp4")):
             previous = judged.get(str(path)) or {}
-            try:
-                duration = round(probe(cfg, path)["duration"], 1)
-            except (Fail, ValueError, KeyError):
-                duration = None
+            duration = None
+            if durations:
+                try:
+                    duration = round(probe(cfg, path)["duration"], 1)
+                except (Fail, ValueError, KeyError):
+                    duration = None
             rows.append({"path": str(path), "entry": None, "duration": duration,
                          "verdict": previous.get("verdict"),
                          "reason": previous.get("reason")})
