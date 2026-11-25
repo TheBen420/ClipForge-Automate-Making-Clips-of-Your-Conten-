@@ -47,6 +47,23 @@ def apply_dark_styles(root):
     style.configure("TLabel", background=BG, foreground=FG, font=("Segoe UI", 10))
     style.configure("Muted.TLabel", foreground=MUTED, font=("Segoe UI", 9))
     style.configure("Title.TLabel", font=("Segoe UI Semibold", 16))
+    style.configure("Card.TFrame", background=CARD)
+    style.configure("Card.TLabel", background=CARD, foreground=FG)
+    style.configure("CardMuted.TLabel", background=CARD, foreground=MUTED,
+                    font=("Segoe UI", 9))
+    style.configure("Card.TCheckbutton", background=CARD, foreground=FG,
+                    font=("Segoe UI", 10), focuscolor=CARD, indicatorbackground=FIELD,
+                    indicatorforeground=ACCENT, fieldbackground=FIELD)
+    style.map("Card.TCheckbutton",
+              background=[("active", "#23242b"), ("selected", CARD), ("disabled", CARD)],
+              foreground=[("active", "#ffffff"), ("disabled", "#6f6f78")],
+              indicatorbackground=[("selected", ACCENT), ("active", "#2f3038"),
+                                   ("disabled", "#232327")])
+    style.configure("Card.TNotebook", background=CARD, borderwidth=0,
+                    tabmargins=(0, 0, 0, 0))
+    style.configure("Card.TNotebook.Tab", background=CARD, foreground=MUTED, padding=(12, 5))
+    style.map("Card.TNotebook.Tab", background=[("selected", "#23242b")],
+              foreground=[("selected", FG)])
     style.configure("TButton", font=("Segoe UI", 10), padding=6)
     style.configure("Go.TButton", font=("Segoe UI Semibold", 11), padding=(18, 9),
                     background=ACCENT, foreground="#ffffff", borderwidth=0)
@@ -208,6 +225,8 @@ class App:
         self.hardware_pill = tk.Label(head, text="checking hardware", bg=RAIL_ON, fg=MUTED,
                                       font=("Segoe UI", 8), padx=10, pady=4)
         self.hardware_pill.pack(side="right")
+        self.header_open = ttk.Button(head, text="Open clips folder", command=self.open_output)
+        self.header_open.pack(side="right", padx=(0, 8))
 
         self.pages = {key: ttk.Frame(self.content, padding=(22, 10, 22, 16))
                       for key in ("make", "judge", "stats")}
@@ -216,7 +235,7 @@ class App:
         scroll.pack(fill="both", expand=True)
         make = scroll.body
         source = self.section(make, "Source")
-        self.nb = ttk.Notebook(source)
+        self.nb = ttk.Notebook(source, style="Card.TNotebook")
         self.nb.pack(fill="x")
         self.build_folder_tab()
         self.build_vod_tab()
@@ -224,8 +243,9 @@ class App:
 
         self.build_options(make)
         self.build_destination(make)
-        self.build_actions(make)
-        self.build_log(make)
+        run_card = self.section(make, "Run", expand=True)
+        self.build_actions(run_card)
+        self.build_log(run_card)
 
         self.build_judge_page(self.pages["judge"])
         self.build_stats_page(self.pages["stats"])
@@ -273,12 +293,17 @@ class App:
                                command=lambda k=key: self.show_page(k))
             button.pack(fill="x", padx=8, pady=1)
             self.nav_buttons[key] = button
+            if key == "judge":
+                self.judge_nav = tk.Label(rail, text="", bg=RAIL, fg="#5d5e67",
+                                          font=("Segoe UI", 8), anchor="e")
+                self.judge_nav.pack(fill="x", padx=20, pady=(0, 2))
 
         foot = tk.Frame(rail, bg=RAIL)
         foot.pack(side="bottom", fill="x", padx=12, pady=14)
         self.update_btn = ttk.Button(foot, text="Update available", command=self.open_update)
-        tk.Label(foot, text="Everything stays on this PC", bg=RAIL, fg="#5d5e67",
-                 font=("Segoe UI", 8)).pack(anchor="w", pady=(8, 0))
+        tk.Label(foot, text="Judging a clip teaches the weighting", bg=RAIL, fg="#5d5e67",
+                 font=("Segoe UI", 8), wraplength=160, justify="left").pack(anchor="w",
+                                                                           pady=(8, 0))
 
     def show_page(self, key):
         titles = {"make": ("Make clips", "Clips land in one folder, named after the source video."),
@@ -296,7 +321,7 @@ class App:
         if key == "judge":
             self.ensure_judge_panel()
         elif key == "stats":
-            self.run_stats_into(self.stats_text)
+            self.refresh_stats()
 
     def build_judge_page(self, parent):
         head = tk.Frame(parent, bg=BG)
@@ -332,39 +357,6 @@ class App:
             self.judge_panel.bind_hotkeys(self.root)
             self.load_judge_records(force=True)
 
-    def judge_in_window(self):
-        rows = self.judge_panel.records if self.judge_panel else []
-        if not rows:
-            messagebox.showinfo("ClipForge", "Nothing to judge yet - make some clips first.")
-            return
-        open_review_window(self.cfg, list(rows), "every clip on disk", root=self.root,
-                           name="all clips")
-    def build_stats_page(self, parent):
-        ttk.Label(parent, text="The same report as `cf stats`, read from feedback.jsonl.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
-        self.stats_text = ScrolledText(parent, height=20, bg="#141417", fg="#c9c9d1",
-                                       relief="flat", font=("Consolas", 9), wrap="word",
-                                       highlightthickness=1, highlightbackground="#2a2a30")
-        self.stats_text.pack(fill="both", expand=True)
-        self.stats_text.configure(state="disabled")
-        ttk.Button(parent, text="Refresh", command=lambda: self.run_stats_into(self.stats_text)
-                   ).pack(anchor="w", pady=(10, 0))
-
-    def refresh_judge_page(self):
-        """Counting clips is a directory walk, not a probe: keep it off the click."""
-        self.judge_count.configure(text="counting clips…")
-
-        def run():
-            try:
-                unjudged = len(cf.unjudged_clips(self.cfg, durations=False))
-                total = len(cf.disk_clips(self.cfg, durations=False))
-                self.queue.put(("judge_count", f"{total} clip(s) on disk  ·  "
-                                               f"{unjudged} never judged"))
-            except cf.Fail as exc:
-                self.queue.put(("judge_count", f"could not read the library: {exc}"))
-
-        threading.Thread(target=run, daemon=True).start()
-
     def judge_last_run(self):
         try:
             rows, target = cf.review_records(self.cfg)
@@ -374,29 +366,85 @@ class App:
         open_review_window(self.cfg, rows, target, root=self.root,
                            name=Path(str(target)).stem[:22])
 
-    def run_stats_into(self, widget):
-        if getattr(self, "stats_running", False):
+    def judge_in_window(self):
+        rows = self.judge_panel.records if self.judge_panel else []
+        if not rows:
+            messagebox.showinfo("ClipForge", "Nothing to judge yet - make some clips first.")
             return
-        self.stats_running = True
+        open_review_window(self.cfg, list(rows), "every clip on disk", root=self.root,
+                           name="all clips")
+    def build_stats_page(self, parent):
+        head = tk.Frame(parent, bg=BG)
+        head.pack(fill="x", pady=(0, 10))
+        self.stats_note = tk.Label(head, text="Read from every judgement in feedback.jsonl",
+                                   bg=BG, fg=MUTED, font=("Segoe UI", 9))
+        self.stats_note.pack(side="left")
+        ttk.Button(head, text="Refresh", command=self.refresh_stats).pack(side="right")
 
+        signals_card = self.section(parent, "Signals, and what they earned")
+        self.signal_table = ttk.Treeview(signals_card, columns=("signal", "weight", "sep", "bar"),
+                                         show="headings", height=6)
+        for key, text, width, anchor in (("signal", "Signal", 120, "w"),
+                                         ("weight", "Weight", 90, "e"),
+                                         ("sep", "Separation", 100, "e"),
+                                         ("bar", "", 260, "w")):
+            self.signal_table.heading(key, text=text)
+            self.signal_table.column(key, width=width, anchor=anchor)
+        self.signal_table.pack(fill="x")
+
+        reasons_card = self.section(parent, "Why clips were dropped")
+        self.reason_table = ttk.Treeview(reasons_card, columns=("reason", "share", "bar"),
+                                         show="headings", height=5)
+        for key, text, width, anchor in (("reason", "Reason", 120, "w"),
+                                         ("share", "Share", 90, "e"),
+                                         ("bar", "", 260, "w")):
+            self.reason_table.heading(key, text=text)
+            self.reason_table.column(key, width=width, anchor=anchor)
+        self.reason_table.pack(fill="x")
+
+    def refresh_stats(self):
         def run():
-            import io
-
-            buffer = io.StringIO()
-            original = sys.stdout
-            sys.stdout = buffer
             try:
-                cf.cmd_stats(self.cfg, argparse.Namespace(ranks=5))
-            except Exception as exc:  # noqa: BLE001 - the report must never crash the app
-                buffer.write(f"stats failed: {exc}\n")
-            finally:
-                sys.stdout = original
-                self.stats_running = False
-            self.queue.put(("stats", buffer.getvalue()))
+                feedback = cf.load_feedback(self.cfg)
+                split = cf.signal_split(feedback)
+                learned = cf.learned_multipliers(self.cfg)
+                effective = {name: float(weight) * learned.get(name, 1.0)
+                             for name, weight in (self.cfg.get("weights") or {}).items()}
+                reasons = {}
+                for row in feedback:
+                    key = row.get("reason")
+                    if key:
+                        key = cf.REASON_ALIASES.get(key, key)
+                        reasons[key] = reasons.get(key, 0) + 1
+                self.queue.put(("stats_tables", (split, effective, reasons, len(feedback))))
+            except Exception as exc:  # noqa: BLE001 - a report must never crash the app
+                self.queue.put(("stats_tables_error", str(exc)))
 
         threading.Thread(target=run, daemon=True).start()
 
-    # ------------------------------------------------------------ styling
+    def fill_stats(self, split, effective, reasons, judged):
+        def bar(value, width=24):
+            filled = int(round(min(abs(value), 1.0) * width))
+            return "█" * filled + "·" * (width - filled)
+
+        self.signal_table.delete(*self.signal_table.get_children())
+        for name in sorted(effective, key=lambda key: -abs(split.get(key, {}).get("separation", 0))):
+            row = split.get(name) or {}
+            separation = float(row.get("separation", 0) or 0)
+            self.signal_table.insert("", "end",
+                                     values=(name, f"{effective[name]:.2f}",
+                                             f"{separation:+.2f}" if row else "no data",
+                                             bar(separation)))
+
+        self.reason_table.delete(*self.reason_table.get_children())
+        total = sum(reasons.values()) or 1
+        for name, count in sorted(reasons.items(), key=lambda item: -item[1]):
+            self.reason_table.insert("", "end",
+                                     values=(name, f"{count / total * 100:.0f}%",
+                                             bar(count / total)))
+        if not reasons:
+            self.reason_table.insert("", "end", values=("nothing judged yet", "", ""))
+        self.stats_note.configure(text=f"{judged} judgement(s) behind these numbers")
 
     def build_styles(self):
         apply_dark_styles(self.root)
@@ -412,12 +460,12 @@ class App:
     # ------------------------------------------------------------ tabs
 
     def build_folder_tab(self):
-        tab = ttk.Frame(self.nb, padding=12)
+        tab = ttk.Frame(self.nb, padding=12, style="Card.TFrame")
         self.nb.add(tab, text="Local folder")
 
         row = ttk.Frame(tab)
         row.pack(fill="x")
-        ttk.Label(row, text="Recordings folder", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(row, text="Recordings folder", style="CardMuted.TLabel").pack(anchor="w")
         line = ttk.Frame(row)
         line.pack(fill="x", pady=(3, 0))
         self.folder_var = tk.StringVar()
@@ -425,19 +473,19 @@ class App:
         ttk.Button(line, text="Choose folder…", command=self.browse).pack(side="left")
 
         self.recursive_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(tab, text="Include subfolders", variable=self.recursive_var) \
-            .pack(anchor="w", pady=(10, 0))
+        ttk.Checkbutton(tab, text="Include subfolders", variable=self.recursive_var,
+                        style="Card.TCheckbutton").pack(anchor="w", pady=(10, 0))
         self.folder_hint = ttk.Label(tab, text="Every video in the folder gets its own clips.",
-                                     style="Muted.TLabel")
+                                     style="CardMuted.TLabel")
         self.folder_hint.pack(anchor="w", pady=(6, 0))
 
     def build_vod_tab(self):
-        tab = ttk.Frame(self.nb, padding=12)
+        tab = ttk.Frame(self.nb, padding=12, style="Card.TFrame")
         self.nb.add(tab, text="Twitch VOD")
 
         row = ttk.Frame(tab)
         row.pack(fill="x")
-        ttk.Label(row, text="VOD link", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(row, text="VOD link", style="CardMuted.TLabel").pack(anchor="w")
         line = ttk.Frame(row)
         line.pack(fill="x", pady=(3, 0))
         self.vod_url_var = tk.StringVar()
@@ -446,25 +494,26 @@ class App:
         self.load_btn.pack(side="left")
 
         self.vod_info_var = tk.StringVar(value="Paste a twitch.tv/videos/… link and press Load.")
-        tk.Label(tab, textvariable=self.vod_info_var, bg=BG, fg=MUTED, font=("Segoe UI", 9),
+        tk.Label(tab, textvariable=self.vod_info_var, bg=CARD, fg=MUTED, font=("Segoe UI", 9),
                  anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(8, 0))
         self.vod_hint = ttk.Label(
             tab, text="It pulls the audio once to find the loud moments, then downloads only "
-                      "those windows.", style="Muted.TLabel")
+                      "those windows.", style="CardMuted.TLabel")
         self.vod_hint.pack(anchor="w", pady=(6, 0))
         self.chat_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(tab, text="Use Twitch chat hype (leans on the messages at the peak)",
-                        variable=self.chat_var).pack(anchor="w", pady=(8, 0))
+                        variable=self.chat_var, style="Card.TCheckbutton").pack(
+            anchor="w", pady=(8, 0))
 
     def section(self, parent, title, expand=False):
-        """A bordered block with a small heading, the way the mockup groups things."""
-        card = tk.Frame(parent, bg=BG, highlightthickness=1, highlightbackground=BORDER)
-        card.pack(fill="both" if expand else "x", expand=expand, pady=(0, 9))
+        """A card with a small heading, the way the mockup groups things."""
+        card = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+        card.pack(fill="both" if expand else "x", expand=expand, pady=(0, 10))
         if title:
-            tk.Label(card, text=title, bg=BG, fg="#6b6c76", font=("Segoe UI", 8),
+            tk.Label(card, text=title, bg=CARD, fg="#6b6c76", font=("Segoe UI", 8),
                      anchor="w").pack(fill="x", padx=14, pady=(10, 0))
-        inner = tk.Frame(card, bg=BG)
-        inner.pack(fill="both" if expand else "x", expand=expand, padx=14, pady=(5, 9))
+        inner = tk.Frame(card, bg=CARD)
+        inner.pack(fill="both" if expand else "x", expand=expand, padx=14, pady=(6, 10))
         return inner
 
     def build_options(self, parent):
@@ -476,14 +525,14 @@ class App:
         self.preset_var.trace_add("write", self.apply_preset)
 
         body = self.section(parent, "How to cut them")
-        grid = tk.Frame(body, bg=BG)
+        grid = tk.Frame(body, bg=CARD)
         grid.pack(fill="x")
 
         def labelled(text, column, widget):
-            box = ttk.Frame(grid)
+            box = ttk.Frame(grid, style="Card.TFrame")
             box.grid(row=0, column=column, sticky="ew", padx=(0, 14))
             grid.columnconfigure(column, weight=1)
-            ttk.Label(box, text=text, style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(box, text=text, style="CardMuted.TLabel").pack(anchor="w")
             widget(box)
 
         labelled("Framing", 0, lambda p: ttk.Combobox(p, textvariable=self.fit_var, width=9,
@@ -504,17 +553,17 @@ class App:
             p, textvariable=self.preset_var, width=13, state="readonly",
             values=["auto"] + list((self.cfg.get("presets") or {}).keys())).pack(fill="x"))
 
-        second = tk.Frame(body, bg=BG)
+        second = tk.Frame(body, bg=CARD)
         second.pack(fill="x", pady=(12, 0))
         self.model_var = tk.StringVar(value=self.cfg.get("model", "medium.en"))
         self.model_var.trace_add("write", self.save_model)
         self.fps_var = tk.StringVar(value="auto")
 
         def labelled_second(text, column, widget):
-            box = ttk.Frame(second)
+            box = ttk.Frame(second, style="Card.TFrame")
             box.grid(row=0, column=column, sticky="ew", padx=(0, 14))
             second.columnconfigure(column, weight=1)
-            ttk.Label(box, text=text, style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(box, text=text, style="CardMuted.TLabel").pack(anchor="w")
             widget(box)
 
         labelled_second("Transcription", 0, lambda p: ttk.Combobox(
@@ -525,10 +574,10 @@ class App:
             values=["auto", "60", "30"]).pack(fill="x"))
         self.apply_preset()
 
-        vocab = tk.Frame(body, bg=BG)
+        vocab = tk.Frame(body, bg=CARD)
         vocab.pack(fill="x", pady=(12, 0))
-        ttk.Label(vocab, text="Vocabulary", style="Muted.TLabel").pack(anchor="w")
-        line = tk.Frame(vocab, bg=BG)
+        ttk.Label(vocab, text="Vocabulary", style="CardMuted.TLabel").pack(anchor="w")
+        line = tk.Frame(vocab, bg=CARD)
         line.pack(fill="x", pady=(3, 0))
         self.prompt_var = tk.StringVar(value=self.cfg.get("prompt", ""))
         entry = tk.Entry(line, textvariable=self.prompt_var, font=("Segoe UI", 10), bg=FIELD,
@@ -536,12 +585,12 @@ class App:
                          highlightbackground="#3a3a42", highlightcolor=ACCENT)
         entry.pack(side="left", fill="x", expand=True, ipady=5)
         self.prompt_var.trace_add("write", self.save_vocabulary)
-        tk.Label(vocab, text="Names it keeps mis-hearing, comma separated", bg=BG, fg="#6b6c76",
+        tk.Label(vocab, text="Names it keeps mis-hearing, comma separated", bg=CARD, fg="#6b6c76",
                  font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
 
     def build_destination(self, parent):
         body = self.section(parent, "Save clips to")
-        row = tk.Frame(body, bg=BG)
+        row = tk.Frame(body, bg=CARD)
         row.pack(fill="x")
         self.output_var = tk.StringVar(value=self.default_output())
         self.text_entry(row, self.output_var)
@@ -549,24 +598,29 @@ class App:
 
         self.subfolder_var = tk.BooleanVar(value=bool(self.cfg.get("clip_output_subfolder", True)))
         ttk.Checkbutton(body, text="Put clips in a subfolder named after the source",
-                        variable=self.subfolder_var).pack(anchor="w", pady=(8, 0))
+                        variable=self.subfolder_var,
+                        style="Card.TCheckbutton").pack(anchor="w", pady=(8, 0))
 
     def build_actions(self, parent):
-        actions = tk.Frame(parent, bg=BG)
+        actions = tk.Frame(parent, bg=CARD)
         actions.pack(fill="x", pady=(0, 10))
         self.go_btn = ttk.Button(actions, text="Make Clips", style="Go.TButton", command=self.start)
         self.go_btn.pack(side="left")
         self.stop_btn = ttk.Button(actions, text="Stop", command=self.request_stop, state="disabled")
         self.stop_btn.pack(side="left", padx=8)
-        self.open_btn = ttk.Button(actions, text="Open clips folder", command=self.open_output,
-                                   state="disabled")
-        self.open_btn.pack(side="right")
+        self.open_btn = self.header_open
+        chips = tk.Frame(actions, bg=CARD)
+        chips.pack(side="right")
+        workers = int(self.cfg.get("render_workers", 1) or 1)
+        for text in (f"{workers} render at a time", "about 30% CPU", "about 25s per clip"):
+            tk.Label(chips, text=text, bg=RAIL_ON, fg=MUTED, font=("Segoe UI", 8),
+                     padx=8, pady=3).pack(side="left", padx=(6, 0))
 
         self.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
         self.progress.pack(fill="x", pady=(2, 6))
         self.status_var = tk.StringVar(value="Ready.")
-        tk.Label(parent, textvariable=self.status_var, bg=BG, fg=MUTED, font=("Segoe UI", 9),
-                 anchor="w").pack(fill="x")
+        tk.Label(parent, textvariable=self.status_var, bg=CARD, fg=MUTED,
+                 font=("Segoe UI", 9), anchor="w").pack(fill="x")
 
     def save_vocabulary(self, *_args):
         text = self.prompt_var.get().strip()
@@ -1060,11 +1114,10 @@ class App:
                         self.queue.put(("judge_records_cached", payload))
                 elif kind == "judge_count":
                     self.judge_count.configure(text=payload)
-                elif kind == "stats":
-                    self.stats_text.configure(state="normal")
-                    self.stats_text.delete("1.0", "end")
-                    self.stats_text.insert("1.0", payload)
-                    self.stats_text.configure(state="disabled")
+                elif kind == "stats_tables":
+                    self.fill_stats(*payload)
+                elif kind == "stats_tables_error":
+                    self.stats_note.configure(text=f"stats failed: {payload}")
                 elif kind == "error":
                     self.write_line(f"\nERROR: {payload}")
                     self.status_var.set("Failed - see the log below.")
