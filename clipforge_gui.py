@@ -27,6 +27,8 @@ BG = "#1b1b1f"
 FG = "#e8e8ea"
 MUTED = "#9a9aa2"
 ACCENT = "#3ba55d"
+RAIL = "#101013"
+RAIL_ON = "#23242b"
 FIELD = "#2a2a30"
 
 
@@ -144,44 +146,178 @@ class App:
         self.run_dir = None
         root.title("ClipForge")
         apply_icon(root)
-        root.geometry("880x900")
-        root.minsize(800, 780)
+        root.geometry("1060x845")
+        root.minsize(980, 700)
         root.configure(bg=BG)
         self.build_styles()
 
-        outer = ttk.Frame(root, padding=18)
-        outer.pack(fill="both", expand=True)
+        shell = ttk.Frame(root)
+        shell.pack(fill="both", expand=True)
+        self.build_rail(shell)
 
-        head = ttk.Frame(outer)
-        head.pack(fill="x")
+        self.content = ttk.Frame(shell)
+        self.content.pack(side="left", fill="both", expand=True)
+
+        head = ttk.Frame(self.content)
+        head.pack(fill="x", padx=22, pady=(16, 2))
         titles = ttk.Frame(head)
         titles.pack(side="left")
-        ttk.Label(titles, text="ClipForge", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(titles, text="Clips land in one folder, named after the source video.",
-                  style="Title.TLabel",
-                  font=("Segoe UI", 10)).pack(anchor="w")
-        self.update_btn = ttk.Button(head, text="Update available",
-                                     command=self.open_update)
-        self.version_label = ttk.Label(head, text=f"v{cf.VERSION}", style="Title.TLabel",
-                                       font=("Segoe UI", 9))
-        self.version_label.pack(side="right", padx=(0, 10), pady=(6, 0))
-        self.root.after(1500, self.check_update)
+        self.page_title = ttk.Label(titles, text="Make clips", style="Title.TLabel")
+        self.page_title.pack(anchor="w")
+        self.page_note = ttk.Label(titles, text="Clips land in one folder, named after the source video.",
+                                   style="Muted.TLabel")
+        self.page_note.pack(anchor="w")
 
-        self.nb = ttk.Notebook(outer)
+        self.pages = {key: ttk.Frame(self.content, padding=(22, 10, 22, 16))
+                      for key in ("make", "judge", "stats")}
+
+        make = self.pages["make"]
+        self.nb = ttk.Notebook(make)
         self.nb.pack(fill="x")
         self.build_folder_tab()
         self.build_vod_tab()
         self.nb.bind("<<NotebookTabChanged>>", lambda _e: self.refresh_hint())
 
-        self.build_options(outer)
-        self.build_destination(outer)
-        self.build_actions(outer)
-        self.build_log(outer)
+        self.build_options(make)
+        self.build_destination(make)
+        self.build_actions(make)
+        self.build_log(make)
+
+        self.build_judge_page(self.pages["judge"])
+        self.build_stats_page(self.pages["stats"])
+        self.show_page("make")
+        self.root.after(1500, self.check_update)
 
         for notice in self.config_notices:
             self.queue.put(("log", f"  ({notice})\n"))
         self.check_environment()
         self.root.after(120, self.drain)
+
+    # ------------------------------------------------------------ shell
+
+    def build_rail(self, parent):
+        rail = tk.Frame(parent, bg=RAIL, width=196)
+        rail.pack(side="left", fill="y")
+        rail.pack_propagate(False)
+
+        brand = tk.Frame(rail, bg=RAIL)
+        brand.pack(fill="x", padx=12, pady=(16, 18))
+        logo = TOOL_DIR / "icon.png"
+        if logo.exists():
+            try:
+                image = tk.PhotoImage(file=str(logo))
+                step = max(1, image.width() // 24)
+                self.brand_logo = image.subsample(step, step)
+                tk.Label(brand, image=self.brand_logo, bg=RAIL).pack(side="left", padx=(0, 9))
+            except tk.TclError:
+                pass
+        titles = tk.Frame(brand, bg=RAIL)
+        titles.pack(side="left")
+        tk.Label(titles, text="ClipForge", bg=RAIL, fg=FG,
+                 font=("Segoe UI Semibold", 10)).pack(anchor="w")
+        self.version_label = tk.Label(titles, text=f"v{cf.VERSION}", bg=RAIL, fg=MUTED,
+                                      font=("Segoe UI", 8))
+        self.version_label.pack(anchor="w")
+
+        self.nav_buttons = {}
+        for key, label in (("make", "Make clips"), ("judge", "Judge clips"),
+                           ("stats", "Selection stats")):
+            button = tk.Button(rail, text=label, anchor="w", relief="flat", bd=0,
+                               bg=RAIL, fg=MUTED, activebackground=RAIL_ON,
+                               activeforeground=FG, highlightthickness=0,
+                               font=("Segoe UI", 10), padx=12, pady=7, cursor="hand2",
+                               command=lambda k=key: self.show_page(k))
+            button.pack(fill="x", padx=8, pady=1)
+            self.nav_buttons[key] = button
+
+        foot = tk.Frame(rail, bg=RAIL)
+        foot.pack(side="bottom", fill="x", padx=12, pady=14)
+        self.update_btn = ttk.Button(foot, text="Update available", command=self.open_update)
+        tk.Label(foot, text="Everything stays on this PC", bg=RAIL, fg="#5d5e67",
+                 font=("Segoe UI", 8)).pack(anchor="w", pady=(8, 0))
+
+    def show_page(self, key):
+        titles = {"make": ("Make clips", "Clips land in one folder, named after the source video."),
+                  "judge": ("Judge clips", "Kept against rejected is what teaches the weighting."),
+                  "stats": ("Selection stats", "What your judgements say about each signal.")}
+        for page_key, page in self.pages.items():
+            page.pack_forget()
+            current = page_key == key
+            self.nav_buttons[page_key].configure(bg=RAIL_ON if current else RAIL,
+                                                 fg=FG if current else MUTED)
+        self.pages[key].pack(fill="both", expand=True)
+        self.page_title.configure(text=titles[key][0])
+        self.page_note.configure(text=titles[key][1])
+        if key == "judge":
+            self.refresh_judge_page()
+        elif key == "stats":
+            self.run_stats_into(self.stats_text)
+
+    def build_judge_page(self, parent):
+        ttk.Label(parent, text="Judging happens in its own window so the list keeps your place "
+                              "while a run is going.", style="Muted.TLabel",
+                  wraplength=700, justify="left").pack(anchor="w", pady=(0, 10))
+        self.judge_count = ttk.Label(parent, text="", style="Title.TLabel",
+                                     font=("Segoe UI", 11))
+        self.judge_count.pack(anchor="w", pady=(0, 10))
+        row = ttk.Frame(parent)
+        row.pack(fill="x")
+        ttk.Button(row, text="Open judging window", command=self.open_judge).pack(side="left")
+        ttk.Button(row, text="Judge last run", command=self.judge_last_run).pack(side="left",
+                                                                                padx=(8, 0))
+        ttk.Button(row, text="Open clips folder", command=self.open_output).pack(side="right")
+        ttk.Label(parent, text="Keys: space plays, k keeps, m maybe, then b / w / e / l / c for "
+                              "a reason.", style="Muted.TLabel").pack(anchor="w", pady=(12, 0))
+
+    def build_stats_page(self, parent):
+        ttk.Label(parent, text="The same report as `cf stats`, read from feedback.jsonl.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
+        self.stats_text = ScrolledText(parent, height=20, bg="#141417", fg="#c9c9d1",
+                                       relief="flat", font=("Consolas", 9), wrap="word",
+                                       highlightthickness=1, highlightbackground="#2a2a30")
+        self.stats_text.pack(fill="both", expand=True)
+        self.stats_text.configure(state="disabled")
+        ttk.Button(parent, text="Refresh", command=lambda: self.run_stats_into(self.stats_text)
+                   ).pack(anchor="w", pady=(10, 0))
+
+    def refresh_judge_page(self):
+        try:
+            unjudged = cf.unjudged_clips(self.cfg)
+            total = len(cf.disk_clips(self.cfg))
+        except cf.Fail:
+            unjudged, total = [], 0
+        self.judge_count.configure(text=f"{total} clip(s) on disk  ·  {len(unjudged)} never judged")
+
+    def judge_last_run(self):
+        try:
+            rows, target = cf.review_records(self.cfg)
+        except cf.Fail as exc:
+            messagebox.showinfo("ClipForge", str(exc))
+            return
+        open_review_window(self.cfg, rows, target, root=self.root,
+                           name=Path(str(target)).stem[:22])
+
+    def run_stats_into(self, widget):
+        if getattr(self, "stats_running", False):
+            return
+        self.stats_running = True
+
+        def run():
+            import io
+
+            buffer = io.StringIO()
+            original = sys.stdout
+            sys.stdout = buffer
+            try:
+                cf.cmd_stats(self.cfg, argparse.Namespace(ranks=5))
+            except Exception as exc:  # noqa: BLE001 - the report must never crash the app
+                buffer.write(f"stats failed: {exc}\n")
+            finally:
+                sys.stdout = original
+                self.stats_running = False
+            self.queue.put(("stats", buffer.getvalue()))
+
+        threading.Thread(target=run, daemon=True).start()
 
     # ------------------------------------------------------------ styling
 
@@ -327,10 +463,6 @@ class App:
         self.open_btn = ttk.Button(actions, text="Open clips folder", command=self.open_output,
                                    state="disabled")
         self.open_btn.pack(side="right")
-        ttk.Button(actions, text="Judge clips", command=self.open_judge).pack(side="right",
-                                                                             padx=(0, 8))
-        ttk.Button(actions, text="Selection stats", command=self.show_stats).pack(side="right",
-                                                                                  padx=(0, 8))
 
         self.progress = ttk.Progressbar(parent, mode="determinate", maximum=100)
         self.progress.pack(fill="x", pady=(2, 6))
@@ -423,7 +555,7 @@ class App:
         threading.Thread(target=run, daemon=True).start()
 
     def build_log(self, parent):
-        self.log = ScrolledText(parent, height=13, bg="#141417", fg="#c9c9d1", relief="flat",
+        self.log = ScrolledText(parent, height=9, bg="#141417", fg="#c9c9d1", relief="flat",
                                 font=("Consolas", 9), insertbackground=FG, wrap="word",
                                 highlightthickness=1, highlightbackground="#2a2a30")
         self.log.pack(fill="both", expand=True, pady=(8, 0))
@@ -831,7 +963,12 @@ class App:
                     self.version_label.configure(text=f"v{cf.VERSION}  ·  latest {latest}")
                     if newer:
                         self.update_btn.configure(text=f"Version {latest} is out")
-                        self.update_btn.pack(side="right", padx=(0, 10), pady=(6, 0))
+                        self.update_btn.pack(anchor="w", pady=(0, 6))
+                elif kind == "stats":
+                    self.stats_text.configure(state="normal")
+                    self.stats_text.delete("1.0", "end")
+                    self.stats_text.insert("1.0", payload)
+                    self.stats_text.configure(state="disabled")
                 elif kind == "error":
                     self.write_line(f"\nERROR: {payload}")
                     self.status_var.set("Failed - see the log below.")
