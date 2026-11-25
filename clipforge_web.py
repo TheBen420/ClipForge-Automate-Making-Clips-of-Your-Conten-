@@ -6,6 +6,7 @@ api object instead of drawing widgets itself.
 """
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -13,6 +14,7 @@ import sys
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 TOOL_DIR = Path(__file__).resolve().parent
@@ -322,6 +324,41 @@ class Api:
         rows = cf.disk_clips(self.cfg)
         rows.sort(key=lambda row: (row.get("verdict") is not None, row["path"]))
         return rows
+
+    def _cover(self, clip):
+        """The cover ClipForge wrote beside a clip, shrunk once and kept for the list."""
+        clip = Path(clip)
+        cover = clip.with_name(clip.stem + "-thumb.jpg")
+        if not cover.exists():
+            return None
+        try:
+            stamp = int(cover.stat().st_mtime)
+        except OSError:
+            return None
+        cache = cf.media_root(self.cfg) / "cache" / "thumbs"
+        small = cache / f"{abs(hash((str(cover), stamp)))}.jpg"
+        if not small.exists():
+            cache.mkdir(parents=True, exist_ok=True)
+            try:
+                subprocess.run([cf.ffmpeg_path(self.cfg), "-hide_banner", "-loglevel", "error",
+                                "-y", "-i", str(cover), "-vf", "scale=-2:200", str(small)],
+                               check=True, capture_output=True, timeout=30)
+            except (subprocess.SubprocessError, OSError):
+                return None
+        try:
+            return "data:image/jpeg;base64," + base64.b64encode(small.read_bytes()).decode("ascii")
+        except OSError:
+            return None
+
+    def thumbs(self):
+        """A small still of every clip that has a cover, keyed by clip path."""
+        rows = cf.disk_clips(self.cfg, durations=False)
+        found = {}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            for row, data in zip(rows, pool.map(lambda row: self._cover(row["path"]), rows)):
+                if data:
+                    found[row["path"]] = data
+        return found
 
     def judge(self, path, verdict, reason=None):
         rows = {str(row.get("clip")): row for row in cf.load_feedback(self.cfg)}

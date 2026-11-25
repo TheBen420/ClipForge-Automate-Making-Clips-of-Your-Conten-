@@ -160,6 +160,9 @@
   .body.judge-body .side { overflow-y: auto; min-height: 0; }
   /* .clip is a grid, which outranks the hidden attribute the search uses to hide rows. */
   .clip[hidden] { display: none; }
+  /* A real cover replaces the mockup's gradient placeholder. */
+  .thumb.has-cover { background-size: cover; background-position: center; }
+  .thumb.has-cover::after { display: none; }
 </style>
 </head>
 <body>
@@ -215,6 +218,7 @@ const state = {
   status: "Ready.",
   running: false,
   per_clip: null,
+  thumbs: {},
 };
 
 let api = null;
@@ -246,6 +250,10 @@ function boot() {
     state.settings = settings;
     const wanted = (location.hash || "").replace("#", "");
     setView(["make", "judge", "stats"].includes(wanted) ? wanted : "make");
+  });
+  api.thumbs().then((covers) => {
+    state.thumbs = covers;
+    paintThumbs();
   });
   api.list_clips().then((rows) => {
     state.clips = rows;
@@ -281,6 +289,18 @@ function setView(view) {
   scroller().scrollTop = carry;
   const current = body.querySelector("#current-clip");
   if (current) current.scrollIntoView({ block: "nearest" });
+  paintThumbs();
+}
+
+function paintThumbs() {
+  document.querySelectorAll(".clip .thumb").forEach((node) => {
+    const row = state.clips[Number(node.dataset.index)];
+    const cover = row && state.thumbs[row.path];
+    if (!cover || node.dataset.painted === "1") return;
+    node.style.backgroundImage = "url(" + cover + ")";
+    node.classList.add("has-cover");
+    node.dataset.painted = "1";
+  });
 }
 
 function persist() {
@@ -535,7 +555,7 @@ function judgeView() {
     const rowEl = el(`
       <div class="clip" role="option" aria-selected="${index === state.selected}" data-index="${index}">
         <span class="score" style="text-align:left">${index + 1}</span>
-        <div class="thumb"></div>
+        <div class="thumb" data-index="${index}"></div>
         <div>
           <div class="name">${esc(name)}</div>
           <div class="meta">${row.duration ? Math.round(row.duration) + "s" : ""}${row.score ? " · score " + Number(row.score).toFixed(2) : ""}</div>
