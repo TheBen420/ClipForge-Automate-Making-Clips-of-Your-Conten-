@@ -8,6 +8,8 @@ __pycache__/
 venv/
 
 # Run artifacts
+.test*.py
+.judge*.py
 *.log
 .vod-test.log
 
