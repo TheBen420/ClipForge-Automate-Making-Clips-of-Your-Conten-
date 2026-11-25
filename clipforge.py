@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1737,8 +1737,10 @@ def record_feedback(cfg, clip, verdict, record, reason=None):
     entry["weights"] = dict(entry.get("weights") or {})
     entry["version"] = entry.get("version") or VERSION
     entry["driven_by"] = top_signal(entry.get("features"), entry["weights"])
-    with open(feedback_path(cfg), "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry) + "\n")
+    rows = [row for row in load_feedback(cfg) if str(row.get("clip")) != str(clip)]
+    rows.append(entry)
+    feedback_path(cfg).write_text(
+        "".join(json.dumps(row) + chr(10) for row in rows), encoding="utf-8")
 
 
 def load_feedback(cfg):
@@ -1878,7 +1880,7 @@ def cmd_stats(cfg, args):
     maybe = sum(1 for row in feedback if row.get("verdict") == "maybe")
     line = f"\nFeedback: {judged} clip(s) judged - {kept} kept ({kept / judged * 100:.0f}%)"
     if maybe:
-        line += f", {maybe} borderline"
+        line += f", {maybe} maybe"
     print(line)
     by_rank = {}
     for row in feedback:
@@ -2236,6 +2238,30 @@ def unjudged_clips(cfg):
             except (Fail, ValueError, KeyError):
                 duration = None
             rows.append({"path": str(path), "entry": None, "duration": duration})
+    return rows
+
+
+def disk_clips(cfg):
+    """Every clip on disk with whatever has been judged about it so far.
+
+    Re-judging an old batch is worth doing once the ways of judging improve, so the earlier
+    verdicts are shown rather than hidden: a pass can be redone instead of repeated blind.
+    """
+    judged = {str(row.get("clip") or ""): row for row in load_feedback(cfg)}
+    rows = []
+    for folder in ("clips", "ready"):
+        root = media_root(cfg) / folder
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*.mp4")):
+            previous = judged.get(str(path)) or {}
+            try:
+                duration = round(probe(cfg, path)["duration"], 1)
+            except (Fail, ValueError, KeyError):
+                duration = None
+            rows.append({"path": str(path), "entry": None, "duration": duration,
+                         "verdict": previous.get("verdict"),
+                         "reason": previous.get("reason")})
     return rows
 
 

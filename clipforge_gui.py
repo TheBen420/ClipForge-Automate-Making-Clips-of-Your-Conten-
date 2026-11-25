@@ -376,11 +376,11 @@ class App:
         else:
             try:
                 rows = cf.unjudged_clips(self.cfg)
-                if not rows:
-                    rows, target = cf.review_records(self.cfg)
-                    target = str(target)
-                else:
+                if rows:
                     target = f"{len(rows)} clip(s) never judged, in {cf.media_root(self.cfg)}"
+                else:
+                    rows = cf.disk_clips(self.cfg)
+                    target = f"every clip on disk, {cf.media_root(self.cfg)}"
             except cf.Fail as exc:
                 messagebox.showinfo("ClipForge", str(exc))
                 return
@@ -388,7 +388,8 @@ class App:
             messagebox.showinfo("ClipForge", "Every clip on disk has been judged already.")
             return
         open_review_window(self.cfg, rows, target, root=self.root,
-                          name=Path(str(target)).name if records else "unjudged on disk")
+                          name=Path(str(target)).name if records
+                          else ("never judged" if "never judged" in target else "all clips"))
 
     def check_update(self):
         """Ask GitHub which build is published, every launch, and say so either way."""
@@ -903,8 +904,8 @@ def open_review_window(cfg, records, target, root=None, name=None):
                     listing.selection_set(index)
                     listing.see(index)
                     break
-        status.set(f"{kept} kept, {how_many} borderline, {dropped} rejected, {left} to go  -  "
-                   f"space plays, k keeps, m borderline, then a reason or r to reject")
+        status.set(f"{kept} kept, {how_many} maybe, {dropped} rejected, {left} to go  -  "
+                   f"space plays, k keeps, m maybe, then a reason or r to reject")
 
     def current():
         selection = listing.curselection()
@@ -923,15 +924,17 @@ def open_review_window(cfg, records, target, root=None, name=None):
         if index is None:
             return
         record = records[index]
-        if not record.get("verdict"):
-            cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
-            record["verdict"] = verdict
-            record["reason"] = reason
-        elif reason and record.get("verdict") == "reject":
+        if record.get("verdict") == "reject" and reason:
             cf.update_reason(cfg, record["path"], reason)
             record["reason"] = reason
             refresh()
             return
+        if record.get("verdict") == verdict and (reason or not reason):
+            refresh(select_first_unjudged=True)
+            return
+        cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
+        record["verdict"] = verdict
+        record["reason"] = reason
         refresh(select_first_unjudged=True)
 
     def open_folder():
@@ -941,7 +944,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
     buttons.pack(fill="x", padx=12)
     ttk.Button(buttons, text="Play (space)", command=play).pack(side="left")
     ttk.Button(buttons, text="Keep (k)", command=lambda: judge("keep")).pack(side="left", padx=(8, 0))
-    ttk.Button(buttons, text="Borderline (m)",
+    ttk.Button(buttons, text="Maybe (m)",
                command=lambda: judge("maybe")).pack(side="left", padx=(8, 0))
     ttk.Button(buttons, text="Open folder", command=open_folder).pack(side="right")
 
