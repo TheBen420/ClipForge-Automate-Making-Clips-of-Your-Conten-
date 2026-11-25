@@ -274,6 +274,7 @@ const state = {
   thumbs: {},
   verdictFilter: "all",
   open: new Set(),
+  groupsSeeded: false,
 };
 
 let api = null;
@@ -624,9 +625,10 @@ function judgeView() {
     const newest = (name) => Math.max(...groups.get(name).map((row) => row.added || 0));
     return newest(b) - newest(a);
   });
-  if (!state.open.size && order.length) state.open.add(order[0]);
-  const chosen = state.clips[state.selected];
-  if (chosen) state.open.add(chosen.source || "Clips");
+  if (!state.groupsSeeded && order.length) {
+    state.open.add(order[0]);
+    state.groupsSeeded = true;
+  }
 
   order.forEach((source) => {
     const members = groups.get(source);
@@ -782,7 +784,8 @@ async function submit(verdict, reason) {
   if (after !== -1) state.selected = after;
   else if (first !== -1) state.selected = first;
   else state.selected = Math.min(state.selected, state.clips.length - 1);
-  if (state.clips[state.selected]) state.open.add(state.clips[state.selected].source || "Clips");
+  const arrived = state.clips[state.selected];
+  if (arrived && arrived.source !== row.source) state.open.add(arrived.source || "Clips");
   const left = state.clips.filter((item) => !item.verdict).length;
   document.getElementById("nav-left").textContent = left ? left : "";
   setView("judge");
@@ -851,6 +854,10 @@ document.addEventListener("keydown", (event) => {
   if (state.view !== "judge" || !state.info) return;
   const tag = (event.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select") return;
+  // A collapsed batch or a filter can leave the selected clip out of sight; judging what
+  // cannot be seen is how a batch gets ruined, so the keys do nothing until it is back.
+  const current = document.getElementById("current-clip");
+  if (!current || current.hidden) return;
   const keys = state.info.reason_keys || {};
   if (key === "k") { submit("keep", null); event.preventDefault(); }
   else if (key === "m") { submit("maybe", null); event.preventDefault(); }
