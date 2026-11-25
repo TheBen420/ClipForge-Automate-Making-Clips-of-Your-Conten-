@@ -8,12 +8,15 @@ api object instead of drawing widgets itself.
 import argparse
 import base64
 import hashlib
+import http.server
 import json
 import os
+import secrets
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -24,6 +27,68 @@ sys.path.insert(0, str(TOOL_DIR))
 import clipforge as cf
 
 UI = TOOL_DIR / "ui" / "index.html"
+
+
+class ClipServer(http.server.BaseHTTPRequestHandler):
+    """Serves one clip at a time to the window, and nothing outside the media folder.
+
+    WebView2 will not read a file:// video from a page it loaded over http, so the page asks
+    this for a loopback URL. Byte ranges are honoured, otherwise the scrubber in the player
+    cannot move.
+    """
+
+    root = None
+    token = None
+
+    def log_message(self, *args):  # noqa: A003 - keep the server quiet
+        pass
+
+    def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler's name
+        parts = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parts.query)
+        if query.get("token", [""])[0] != self.token:
+            self.send_error(403)
+            return
+        try:
+            target = Path(query.get("path", [""])[0]).resolve()
+        except (OSError, RuntimeError):
+            self.send_error(404)
+            return
+        root = Path(self.root).resolve()
+        if root not in target.parents or not target.is_file():
+            self.send_error(404)
+            return
+        size = target.stat().st_size
+        start, end = 0, size - 1
+        header = self.headers.get("Range", "")
+        if header.startswith("bytes="):
+            first, _, last = header[6:].partition("-")
+            try:
+                start = int(first or 0)
+                end = int(last) if last else size - 1
+            except ValueError:
+                start, end = 0, size - 1
+            end = max(start, min(end, size - 1))
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        try:
+            with target.open("rb") as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(262144, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (OSError, ConnectionError):
+            pass
 
 
 class Api:
@@ -41,6 +106,8 @@ class Api:
         self._window = None  # private: pywebview would otherwise walk the window object
         self.lock = threading.Lock()
         self._hardware = None
+        self._media = None
+        self._media_token = secrets.token_hex(16)
         self.per_clip = None
         self.render_seconds = 0.0
         self.render_clips = 0
@@ -129,6 +196,17 @@ class Api:
 
     def choose_output(self):
         return self.choose_folder()
+
+    def preview(self, path):
+        """A loopback URL for one clip, so the window can play it without leaving the page."""
+        if self._media is None:
+            handler = type("BoundClipServer", (ClipServer,),
+                           {"root": str(cf.media_root(self.cfg)), "token": self._media_token})
+            self._media = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            self._media.daemon_threads = True
+            threading.Thread(target=self._media.serve_forever, daemon=True).start()
+        query = urllib.parse.urlencode({"path": str(path), "token": self._media_token})
+        return {"url": f"http://127.0.0.1:{self._media.server_address[1]}/clip?{query}"}
 
     def open_path(self, path):
         try:
