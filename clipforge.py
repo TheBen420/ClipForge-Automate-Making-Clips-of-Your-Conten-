@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.6.8"
+VERSION = "0.6.9"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1705,20 +1705,23 @@ def write_session(cfg, mode, source, entry, clips, signals, seconds, extra=None)
 FEEDBACK_SCHEMA = 2
 # Fixed set so the tallies stay comparable across batches; the GUI shows these as buttons.
 # Two of them blame completely different halves of the tool: boring and wrong moment blame
-# the signals that chose the window, bad edit blames the cut and the framing that dressed it
+# the signals that chose the window, bad edit blames the cut and the framing that dressed it,
+# bad captions blames the transcript and how it was burned in
 # - a good moment dressed badly, which should not count against the signal that found it.
-REJECT_REASONS = ("boring", "wrong moment", "bad edit", "late start", "cut short")
+REJECT_REASONS = ("boring", "wrong moment", "bad edit", "bad captions",
+                   "late start", "cut short")
 REASON_KEYS = {"boring": "b", "wrong moment": "w", "bad edit": "e",
-               "late start": "l", "cut short": "c"}
+               "bad captions": "s", "late start": "l", "cut short": "c"}
 REASON_NOTES = {
     "boring": "nothing happens in it",
     "wrong moment": "right footage, wrong stretch",
-    "bad edit": "framing, captions or a jump in the cut",
+    "bad edit": "framing, or a jump in the cut",
+    "bad captions": "wrong words, wrong timing, or in the way",
     "late start": "the moment had already begun when the clip opens",
     "cut short": "it ends before the payoff finishes",
 }
 # earlier builds split that last one in two, and old rows keep their wording in the tally
-REASON_ALIASES = {"cut off": "bad edit", "framing": "bad edit"}
+REASON_ALIASES = {"cut off": "bad edit", "framing": "bad edit", "captions": "bad captions"}
 
 
 def top_signal(features, weights):

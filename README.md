@@ -39,7 +39,7 @@ D:\ClipForge\clips\Palworld Good Ultra Boss Kills\
 
 ![The Judge clips tab](docs/tab-judge.png)
 
-Judging is how ClipForge learns what you actually want. The tab lists every clip on disk, grouped by the batch it came from, with covers, filters by verdict, and search. Keep it, mark it maybe, or reject it with a reason — *boring*, *wrong moment*, *bad edit*, *late start*, *cut short* — using `k`, `m`, and `b`/`w`/`e`/`l`/`c`. The list advances to the next clip on its own.
+Judging is how ClipForge learns what you actually want. The tab lists every clip on disk, grouped by the batch it came from, with covers, filters by verdict, and search. Keep it, mark it maybe, or reject it with a reason — *boring*, *wrong moment*, *bad edit*, *bad captions*, *late start*, *cut short* — using `k`, `m`, and `b`/`w`/`e`/`s`/`l`/`c`. The list advances to the next clip on its own.
 
 Click a cover, or double-click a row, to watch the clip in the window while you judge; the keys keep working, and the clip moves on when you do.
 

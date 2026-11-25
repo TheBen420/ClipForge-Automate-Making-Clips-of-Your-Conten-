@@ -82,7 +82,7 @@ The replay is read a hundred messages at a time, each request asking Twitch for 
 
 <img src="docs/judge-window.png" alt="The judging window" width="620">
 
-After a run the app opens the judging window with the clips it made. **Keep**, **Maybe**, or a reason for rejecting — *boring*, *wrong moment*, *bad edit*, *late start*, *cut short* — with keys `k`, `m`, and `b`/`w`/`e`/`l`/`c`. The two boundary reasons exist because "the moment was wrong" and "the moment was right but the clip started after it did" are different mistakes with different fixes: the first is the ranking, the second is where the window opens and closes. Every judgement goes into `D:\ClipForge\feedback.jsonl` alongside the scores that produced that clip, and the list selects the next row after each one so you can walk a batch in order. `cf stats` reads it back:
+After a run the app opens the judging window with the clips it made. **Keep**, **Maybe**, or a reason for rejecting — *boring*, *wrong moment*, *bad edit*, *bad captions*, *late start*, *cut short* — with keys `k`, `m`, and `b`/`w`/`e`/`s`/`l`/`c`. The two boundary reasons exist because "the moment was wrong" and "the moment was right but the clip started after it did" are different mistakes with different fixes: the first is the ranking, the second is where the window opens and closes. Every judgement goes into `D:\ClipForge\feedback.jsonl` alongside the scores that produced that clip, and the list selects the next row after each one so you can walk a batch in order. `cf stats` reads it back:
 
 ```
 Feedback: 24 clip(s) judged - 15 kept (63%)

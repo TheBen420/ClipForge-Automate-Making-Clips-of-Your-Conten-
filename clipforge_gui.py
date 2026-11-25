@@ -1207,7 +1207,8 @@ class JudgePanel:
                       command=lambda r=reason: self.judge("reject", r)).pack(
                 fill="x", padx=12, pady=1)
         tk.Label(panel, text="boring and wrong moment blame the signals. late start, cut "
-                            "short and bad edit blame the window.", bg=CARD, fg="#6b6c76",
+                            "short and bad edit blame the window, bad captions the transcript.",
+                            bg=CARD, fg="#6b6c76",
                  font=("Segoe UI", 8), justify="left", wraplength=230).pack(
             anchor="w", padx=12, pady=(10, 0))
 
