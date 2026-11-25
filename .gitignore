@@ -1,0 +1,18 @@
+# Local settings carry machine paths and are generated on first run
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Run artifacts
+*.log
+.vod-test.log
+
+# Editors and OS cruft
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

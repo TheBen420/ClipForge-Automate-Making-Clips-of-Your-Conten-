@@ -1,0 +1,10 @@
+# Core runtime - enough for CPU transcription and rendering anywhere.
+faster-whisper>=1.2.1
+av>=15.1.0
+numpy
+yt-dlp
+
+# Optional: CUDA wheels that make whisper use the GPU on NVIDIA cards.
+# Uncomment these on a machine with an NVIDIA GPU, or install them by hand.
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12==9.*
