@@ -99,6 +99,23 @@ class StreamToQueue:
         pass
 
 
+def apply_icon(window):
+    """Give the window ClipForge's own icon so the taskbar and title bar agree."""
+    icon = TOOL_DIR / "icon.ico"
+    if os.name == "nt" and icon.exists():
+        try:
+            window.iconbitmap(str(icon))
+            window.iconbitmap(default=str(icon))
+        except tk.TclError:
+            pass
+    photo = TOOL_DIR / "icon.png"
+    if photo.exists():
+        try:
+            window.iconphoto(True, tk.PhotoImage(file=str(photo)))
+        except tk.TclError:
+            pass
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -113,13 +130,18 @@ class App:
         self.clips_root = cf.media_root(self.cfg) / "clips"
         self.run_dir = None
 
-        root.title("ClipForge")
-        icon = TOOL_DIR / "icon.ico"
-        if icon.exists():
+        # Windows groups taskbar buttons by process identity. Without its own AppUserModelID
+        # the window inherits pythonw.exe's identity and the taskbar keeps Python's icon,
+        # however the window's own icon is set.
+        if os.name == "nt":
             try:
-                root.iconbitmap(default=str(icon))
-            except tk.TclError:
+                import ctypes
+
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ClipForge.App")
+            except Exception:  # noqa: BLE001 - never fatal, just a plain taskbar icon
                 pass
+        root.title("ClipForge")
+        apply_icon(root)
         root.geometry("880x900")
         root.minsize(800, 780)
         root.configure(bg=BG)
@@ -138,8 +160,9 @@ class App:
                   font=("Segoe UI", 10)).pack(anchor="w")
         self.update_btn = ttk.Button(head, text="Update available",
                                      command=self.open_update)
-        ttk.Label(head, text=f"v{cf.VERSION}", style="Title.TLabel",
-                  font=("Segoe UI", 9)).pack(side="right", padx=(0, 10), pady=(6, 0))
+        self.version_label = ttk.Label(head, text=f"v{cf.VERSION}", style="Title.TLabel",
+                                       font=("Segoe UI", 9))
+        self.version_label.pack(side="right", padx=(0, 10), pady=(6, 0))
         self.root.after(1500, self.check_update)
 
         self.nb = ttk.Notebook(outer)
@@ -417,14 +440,15 @@ class App:
         open_review_window(self.cfg, rows, target, root=self.root)
 
     def check_update(self):
-        """Ask GitHub for the published version in the background, once, at startup."""
+        """Ask GitHub which build is published, every launch, and say so either way."""
         def run():
             try:
-                latest = cf.update_available(self.cfg)
+                latest, checked = cf.update_status(self.cfg, max_age=0)
             except Exception:  # noqa: BLE001 - never let a network hiccup touch the app
-                latest = None
-            if latest:
-                self.queue.put(("update", latest))
+                latest, checked = None, False
+            if checked and latest:
+                newer = cf.parse_version(latest) > cf.parse_version(cf.VERSION)
+                self.queue.put(("version", (latest, newer)))
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -841,9 +865,12 @@ class App:
                     self.load_btn.state(["!disabled"])
                 elif kind == "review":
                     self.show_review(payload)
-                elif kind == "update":
-                    self.update_btn.configure(text=f"Version {payload} is out")
-                    self.update_btn.pack(side="right", padx=(0, 10), pady=(6, 0))
+                elif kind == "version":
+                    latest, newer = payload
+                    self.version_label.configure(text=f"v{cf.VERSION}  ·  latest {latest}")
+                    if newer:
+                        self.update_btn.configure(text=f"Version {latest} is out")
+                        self.update_btn.pack(side="right", padx=(0, 10), pady=(6, 0))
                 elif kind == "error":
                     self.write_line(f"\nERROR: {payload}")
                     self.status_var.set("Failed - see the log below.")
@@ -873,6 +900,7 @@ def open_review_window(cfg, records, target, root=None):
     own_root = root is None
     window = tk.Tk() if own_root else tk.Toplevel(root)
     apply_dark_styles(window)
+    apply_icon(window)
     window.title("ClipForge - judge clips")
     window.configure(bg=BG)
     window.geometry("760x420")
