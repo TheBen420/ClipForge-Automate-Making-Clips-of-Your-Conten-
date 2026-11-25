@@ -193,5 +193,6 @@ Write-Host ""
 Write-Host "  Done." -ForegroundColor Green
 Say "  Double-click ClipForge on the desktop to open it."
 Say "  Your clips will be saved in a ClipForge folder on your D: or C: drive."
+Say "  The first time you make clips it downloads a 1.5 GB speech model - once only."
 Say ""
 Pause

@@ -15,7 +15,7 @@ Turns a livestream recording (or a VOD link) into vertical, captioned, post-read
 3. Wait about three minutes. It fetches Python and ffmpeg if the machine doesn't have them, installs what ClipForge needs, checks the PC can actually render video, and puts **ClipForge** on the desktop.
 4. Double-click **ClipForge** on the desktop.
 
-Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn't one. Windows may warn that the file came from the internet: **More info → Run anyway**. Everything it installs is either from Microsoft's own package manager (winget) or from python.org.
+Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn't one. The first time you make clips it downloads the 1.5 GB speech model, once; after that everything runs offline. Windows may warn that the file came from the internet: **More info → Run anyway**. Everything it installs is either from Microsoft's own package manager (winget) or from python.org.
 
 ### Any machine, from a terminal
 
