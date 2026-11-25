@@ -116,7 +116,28 @@ def load_config():
             save_config(cfg)
     else:
         CONFIG_PATH.write_text(json.dumps(DEFAULT_CONFIG, indent=2), encoding="utf-8")
+    capped = []
+    for key in ("workers", "render_workers"):
+        cfg[key], asked = safe_worker_count(cfg.get(key))
+        if asked:
+            capped.append(f"{key} {asked}")
+    if capped:
+        print(f"  ({' and '.join(capped)} in config.json - held at {MAX_WORKERS}, the cap that "
+              f"keeps a batch from pinning every core)")
     return cfg
+
+
+def safe_worker_count(value):
+    """Clamp a parallelism setting however it was written. One render fills every core, so
+    three at once is how a fan profile turns into a thermal shutdown; the return is the
+    usable count and, when the request was over the cap, what it asked for."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise Fail(f"workers must be a number from 1 to {MAX_WORKERS}, got {value!r}")
+    if number > MAX_WORKERS:
+        return MAX_WORKERS, number
+    return max(1, number), None
 
 
 def save_config(cfg):
@@ -735,7 +756,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5

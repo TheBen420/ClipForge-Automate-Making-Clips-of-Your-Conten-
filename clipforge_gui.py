@@ -281,13 +281,6 @@ class App:
         labelled("Frame rate", lambda p: ttk.Combobox(p, textvariable=self.fps_var, width=7,
                                                       state="readonly",
                                                       values=["auto", "60", "30"]).pack())
-        self.workers_var = tk.StringVar(
-            value=str(min(cf.MAX_WORKERS, int(self.cfg.get("workers", 1)))))
-        labelled("Parallel jobs", lambda p: ttk.Combobox(p, textvariable=self.workers_var,
-                                                         width=5, state="readonly",
-                                                         values=[str(n) for n in
-                                                                 range(1, cf.MAX_WORKERS + 1)]
-                                                         ).pack())
         labelled("Content type", lambda p: ttk.Combobox(p, textvariable=self.preset_var, width=13,
                                                         state="readonly",
                                                         values=["auto"] + list(
@@ -308,12 +301,6 @@ class App:
                   text="Vocabulary: names and terms it keeps mis-hearing, comma separated. It "
                        "biases the transcript toward them and improves punctuation too."
                   ).pack(anchor="w", pady=(4, 0))
-
-        ttk.Label(parent, style="Muted.TLabel", wraplength=790, justify="left",
-                  text="Parallel jobs: how many recordings it works on at once. One clip already "
-                       "uses every core, so 1 keeps the machine responsive and 2 is only a "
-                       "percent or two faster while it pins the CPU the whole run."
-                  ).pack(anchor="w", pady=(8, 0))
 
     def build_destination(self, parent):
         row = ttk.Frame(parent)
@@ -576,7 +563,6 @@ class App:
             "count": int(self.count_var.get()),
             "length": float(self.length_var.get()),
             "preset": None if preset == "auto" else preset,
-            "workers": int(self.workers_var.get()),
             "fps": None if self.fps_var.get() == "auto" else int(self.fps_var.get()),
             "chat": bool(getattr(self, "chat_var", None) and self.chat_var.get()),
         }

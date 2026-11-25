@@ -202,7 +202,7 @@ The render is CPU-bound on decode and filtering while NVENC handles the encode; 
 
 What actually helps:
 
-- **One job at a time** is the default for exactly that reason. Two is available and overlaps one clip's analysis with another's render, but it spends triple the CPU to save a second per clip.
+- **One job at a time** is the default for exactly that reason. Two is possible by hand-editing `config.json` (see [Config](#config)), and it overlaps one clip's analysis with another's render, but it spends triple the CPU to save a second per clip.
 - **Cached motion analysis.** The pass that decodes a recording to score on-screen motion writes `motion.json` beside `transcript.json`, keyed to the file's size and timestamp. The first run on a recording costs 10-26s; every run after is instant, so re-clipping something you already indexed costs nothing extra.
 - **The filter chain** blurs the background at quarter resolution and scales with bicubic instead of lanczos. Visually identical, about a third faster per render.
 
@@ -226,6 +226,21 @@ What actually helps:
 ```
 
 `model` is the whisper model: `small.en` is the default, `large-v3` gives the best transcript on the 4080. Raise `caption_margin_bottom` to lift captions higher up the frame, lower it to drop them toward the bottom edge. `ytdlp_cookies_from_browser` takes `chrome` or `firefox` for login-walled VODs.
+
+### Parallel rendering, if you edit the file
+
+One clip is rendered at a time and that is the only setting the app exposes, because two renders at once measured 92% CPU against 31% for one to save 4% of the wall clock. The knob still exists for anyone who wants it, and it is deliberately not in the window:
+
+```json
+{
+  "workers": 2,
+  "render_workers": 2
+}
+```
+
+Both keys mean the same thing — how many clips or recordings are worked on at once — and both are read only from `config.json`, so changing `2` to `1` or `1` to `2` there and restarting is the whole procedure. Nothing in the interface writes these values, so a hand edit survives every later save of the other settings.
+
+**The cap at 2 is a failsafe, not a suggestion.** This is a young program with an unproven scheduler, and a render is already using every core of the machine; three or four at once on a stock cooler is how you turn a fan curve into a thermal shutdown, and on a laptop it is how you turn one batch into a throttled, corrupted-length render. So values above 2 are held at 2 with a line in the log saying so, `0`, negative numbers and junk fall back to 1, and a non-numeric value is refused outright rather than guessed at. You cannot configure this into harming the machine.
 
 ## Captions: accuracy and timing
 
