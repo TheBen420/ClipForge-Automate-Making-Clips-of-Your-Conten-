@@ -7,6 +7,7 @@ api object instead of drawing widgets itself.
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -336,13 +337,14 @@ class Api:
         except OSError:
             return None
         cache = cf.media_root(self.cfg) / "cache" / "thumbs"
-        small = cache / f"{abs(hash((str(cover), stamp)))}.jpg"
+        key = hashlib.md5(f"{cover}|{stamp}".encode("utf-8")).hexdigest()
+        small = cache / f"{key}.jpg"
         if not small.exists():
             cache.mkdir(parents=True, exist_ok=True)
             try:
                 subprocess.run([cf.ffmpeg_path(self.cfg), "-hide_banner", "-loglevel", "error",
                                 "-y", "-i", str(cover), "-vf", "scale=-2:200", str(small)],
-                               check=True, capture_output=True, timeout=30)
+                               check=True, capture_output=True, timeout=30, **cf.NO_WINDOW)
             except (subprocess.SubprocessError, OSError):
                 return None
         try:
