@@ -865,7 +865,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
     window.title(f"ClipForge - judge clips: {name}" if name
                  else "ClipForge - judge clips")
     window.configure(bg=BG)
-    window.geometry("760x420")
+    window.geometry("940x480")
 
     judged = {str(row.get("clip") or ""): row for row in cf.load_feedback(cfg)}
     for record in records:
@@ -895,7 +895,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
         suffix = f"  {float(length):.0f}s" if length else ""
         return f"{mark}  {Path(record['path']).name}{suffix}"
 
-    def refresh(select_first_unjudged=False):
+    def refresh(select=None, select_first_unjudged=False):
         listing.delete(0, "end")
         for index in range(len(records)):
             listing.insert("end", label_for(index))
@@ -903,12 +903,17 @@ def open_review_window(cfg, records, target, root=None, name=None):
         how_many = sum(1 for row in records if row.get("verdict") == "maybe")
         dropped = sum(1 for row in records if row.get("verdict") == "reject")
         left = len(records) - kept - how_many - dropped
+        target = None
         if select_first_unjudged:
-            for index, record in enumerate(records):
-                if not record.get("verdict"):
-                    listing.selection_set(index)
-                    listing.see(index)
-                    break
+            target = next((index for index, record in enumerate(records)
+                           if not record.get("verdict")), None)
+        elif select is not None:
+            target = select
+        if target is not None and records:
+            target = min(max(target, 0), len(records) - 1)
+            listing.selection_set(target)
+            listing.see(target)
+            show_position()
         status.set(f"{kept} kept, {how_many} maybe, {dropped} rejected, {left} to go  -  "
                    f"space plays, k keeps, m maybe, then a reason or r to reject")
 
@@ -916,7 +921,12 @@ def open_review_window(cfg, records, target, root=None, name=None):
         selection = listing.curselection()
         if not selection or not records:
             return
-        position.set(f"row {int(selection[0]) + 1} of {len(records)}")
+        index = int(selection[0])
+        line = f"row {index + 1} of {len(records)}"
+        reason = records[index].get("reason")
+        if reason:
+            line += f"  ·  {reason}: {cf.REASON_NOTES.get(reason, '')}"
+        position.set(line)
 
     def current():
         selection = listing.curselection()
@@ -941,15 +951,15 @@ def open_review_window(cfg, records, target, root=None, name=None):
         if record.get("verdict") == "reject" and reason:
             cf.update_reason(cfg, record["path"], reason)
             record["reason"] = reason
-            refresh()
+            refresh(select=index + 1)
             return
-        if record.get("verdict") == verdict and (reason or not reason):
-            refresh(select_first_unjudged=True)
+        if record.get("verdict") == verdict:
+            refresh(select=index + 1)
             return
         cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
         record["verdict"] = verdict
         record["reason"] = reason
-        refresh(select_first_unjudged=True)
+        refresh(select=index + 1)
 
     def open_folder():
         cf.open_folder(Path(records[0]["path"]).parent)
@@ -966,8 +976,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
     why.pack(fill="x", padx=12, pady=(8, 0))
     ttk.Label(why, text="Rejected because", style="Muted.TLabel").pack(side="left", padx=(0, 8))
     for reason in cf.REJECT_REASONS:
-        keys = "".join(word[0] for word in reason.split())
-        ttk.Button(why, text=f"{reason} ({keys})", width=20,
+        ttk.Button(why, text=f"{reason} ({cf.REASON_KEYS[reason]})", width=16,
                    command=lambda r=reason: judge("reject", r)).pack(side="left", padx=(0, 6))
     ttk.Button(why, text="No reason (r)", width=14,
                command=lambda: judge("reject")).pack(side="left")
@@ -981,8 +990,7 @@ def open_review_window(cfg, records, target, root=None, name=None):
     window.bind("m", lambda _event: judge("maybe"))
     window.bind("r", lambda _event: judge("reject"))
     for reason in cf.REJECT_REASONS:
-        keys = "".join(word[0] for word in reason.split())
-        window.bind(keys, lambda _event, r=reason: judge("reject", r))
+        window.bind(cf.REASON_KEYS[reason], lambda _event, r=reason: judge("reject", r))
     listing.bind("<Double-Button-1>", lambda _event: play())
 
     refresh(select_first_unjudged=True)

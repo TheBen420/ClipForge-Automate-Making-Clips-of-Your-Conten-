@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -1705,7 +1705,16 @@ FEEDBACK_SCHEMA = 2
 # Two of them blame completely different halves of the tool: boring and wrong moment blame
 # the signals that chose the window, bad edit blames the cut and the framing that dressed it
 # - a good moment dressed badly, which should not count against the signal that found it.
-REJECT_REASONS = ("boring", "wrong moment", "bad edit")
+REJECT_REASONS = ("boring", "wrong moment", "bad edit", "late start", "cut short")
+REASON_KEYS = {"boring": "b", "wrong moment": "w", "bad edit": "e",
+               "late start": "l", "cut short": "c"}
+REASON_NOTES = {
+    "boring": "nothing happens in it",
+    "wrong moment": "right footage, wrong stretch",
+    "bad edit": "framing, captions or a jump in the cut",
+    "late start": "the moment had already begun when the clip opens",
+    "cut short": "it ends before the payoff finishes",
+}
 # earlier builds split that last one in two, and old rows keep their wording in the tally
 REASON_ALIASES = {"cut off": "bad edit", "framing": "bad edit"}
 
