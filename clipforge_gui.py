@@ -714,7 +714,8 @@ class App:
         entry, meta, data = self.prepare(path)
         ranked, summary = cf.analyze(self.cfg, entry, meta, data,
                                      preset=opts.get("preset"), want=opts["count"] * 2,
-                                     min_words=cf.min_caption_words(opts.get("captions")))
+                                     min_words=cf.min_caption_words(opts.get("captions")),
+                                     avoid=cf.past_windows(self.cfg, entry.name))
         ns = argparse.Namespace(fit=opts["fit"], captions=opts["captions"], caps=False,
                                 focus=0.5, fps=opts.get("fps"), pad=0.2, snap=True, open=False)
         picks = ranked[: opts["count"]]
@@ -758,7 +759,8 @@ class App:
         self.queue.put(("status", "Scoring every signal…"))
         ranked, summary = cf.analyze(self.cfg, entry, meta, data,
                                      preset=opts.get("preset"), want=opts["count"] * 2,
-                                     min_words=cf.min_caption_words(opts.get("captions")))
+                                     min_words=cf.min_caption_words(opts.get("captions")),
+                                     avoid=cf.past_windows(self.cfg, entry.name))
         if not ranked:
             self.queue.put(("error", "No candidate moments found in this VOD."))
             return

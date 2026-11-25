@@ -691,7 +691,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.0.9"
+VERSION = "0.0.10"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -799,21 +799,43 @@ def boost_hits(text, phrases):
 
 
 def snap_bounds(data, peak, length, min_len, total, max_pre=3.0):
-    """Start no more than max_pre before the peak, ending on a spoken sentence boundary."""
+    """Start just before the peak and end on the first natural pause after it.
+
+    A window of exactly `length` cuts mid-thought and can drop the line that explains
+    what just happened. So the end is the first sentence boundary at or after the target
+    that is followed by a real pause, searched up to `length * 0.6` past it - usually
+    a few seconds, occasionally a dozen - and only if no pause turns up in that range
+    does it fall back to the word boundary closest to the target.
+    """
     segments = data.get("segments") or []
     start = max(0.0, peak - 1.5)
     for segment in segments:
         if segment["start"] <= peak <= segment["end"]:
             start = max(segment["start"], peak - max_pre)
             break
+
     target_end = start + length
-    cap = start + max(length * 1.4, length + 4.0)
-    ends = [word["end"] for word in (data.get("words") or [])
-            if start + min_len <= word["end"] <= cap]
-    end = min(ends, key=lambda edge: abs(edge - target_end)) if ends else target_end
+    horizon = min(total, target_end + max(6.0, length * 0.6))
+    end = None
+    for index, segment in enumerate(segments):
+        if segment["end"] < target_end - 1.0 or segment["start"] > horizon:
+            continue
+        if segment["end"] > horizon:
+            break
+        following = segments[index + 1] if index + 1 < len(segments) else None
+        pause_after = following is None or (following["start"] - segment["end"]) >= 0.7
+        if pause_after:
+            end = segment["end"]
+            break
+
+    if end is None:
+        cap = start + max(length * 1.4, length + 4.0)
+        ends = [word["end"] for word in (data.get("words") or [])
+                if start + min_len <= word["end"] <= cap]
+        end = min(ends, key=lambda edge: abs(edge - target_end)) if ends else target_end
+
     end = min(total, max(end, start + min_len))
     return round(start, 2), round(end, 2)
-
 
 
 def min_caption_words(mode):
@@ -821,11 +843,39 @@ def min_caption_words(mode):
     return 4 if mode in ("karaoke", "block") else 0
 
 
-def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_words=0):
+def past_windows(cfg, entry_name):
+    """Windows already cut for this recording, so a second run finds new material."""
+    spans = []
+    for path in sessions_dir(cfg).glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if data.get("entry") != entry_name:
+            continue
+        for clip in data.get("clips") or []:
+            start, end = clip.get("start"), clip.get("end")
+            if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+                spans.append((float(start), float(end)))
+    return spans
+
+
+def overlaps_past(start, end, spans, share=0.5):
+    """True when most of this window was already turned into a clip."""
+    for past_start, past_end in spans:
+        overlap = min(end, past_end) - max(start, past_start)
+        if overlap > 0 and overlap >= (end - start) * share:
+            return True
+    return False
+
+
+def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_words=0, avoid=None):
     """Score candidate windows from every signal available, returning ranked moments.
 
     With min_words, windows carrying less speech than that are passed over, which keeps
-    captioned clips from landing on a stretch where nobody is talking.
+    captioned clips from landing on a stretch where nobody is talking. With avoid, a list
+    of (start, end) spans already clipped, those windows are passed over too - so running
+    the same footage twice hands back new moments instead of the same clip again.
     """
     import numpy as np
 
@@ -949,6 +999,8 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
         start, end = snap_bounds(data, candidate["peak"], win, min_len, total)
         if min_words and words_between(start, end) < min_words:
             continue
+        if avoid and overlaps_past(start, end, avoid):
+            continue
         if end - start < min_len * 0.5:
             continue
         if any(start < other[1] - 0.4 and end > other[0] + 0.4 for other in taken):
@@ -970,7 +1022,12 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
 
     if not results and min_words:
         print(f"  (no window had {min_words} spoken words - falling back to every signal)")
-        return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want)
+        return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want,
+                       avoid=avoid)
+    if len(results) < want and avoid:
+        print("  (every strong moment has already been clipped - reusing earlier windows)")
+        return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want,
+                       min_words=min_words)
 
     summary = {"total": round(total, 1), "candidates": len(candidates), "window": round(win, 1),
                "weights": {name: round(float(weight), 3) for name, weight in merged.items()}}
@@ -1436,7 +1493,8 @@ def cmd_auto(cfg, args):
     started = time.time()
     entry, meta = load_entry(cfg, args.name)
     data = load_transcript(entry)
-    ranked, summary = analyze(cfg, entry, meta, data, preset=args.preset, want=args.top * 2)
+    ranked, summary = analyze(cfg, entry, meta, data, preset=args.preset, want=args.top * 2,
+                             avoid=past_windows(cfg, entry.name))
     if not ranked:
         raise Fail("no candidate moments found")
     (entry / "highlights.json").write_text(json.dumps(ranked, indent=2), encoding="utf-8")
