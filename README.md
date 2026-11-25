@@ -19,7 +19,7 @@ Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn
 
 ### Version numbers
 
-`VERSION` at the top of `clipforge.py` is the build number, and every build increments the patch: 0.0.5, 0.0.6, 0.0.7. The app compares that against the copy on `main` once a day and offers an update when the published one is higher, so a build is only ever "new" by that one line. Nothing else in the code should hard-code a version.
+`VERSION` at the top of `clipforge.py` is the build number, and every build increments the last digit: 0.0.5, 0.0.6 ... 0.0.9, and then 0.1.0 rather than 0.0.10, because the digits carry like a decimal rather than a counter. The app compares that against the copy on `main` on every launch and offers an update when the published one is higher, so a build is only ever "new" by that one line. Nothing else in the code should hard-code a version.
 
 ### Updating and removing
 
