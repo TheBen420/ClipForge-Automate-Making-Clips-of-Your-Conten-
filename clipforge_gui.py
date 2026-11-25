@@ -23,15 +23,16 @@ from tkinter.scrolledtext import ScrolledText
 import clipforge as cf
 
 VIDEO_EXT = (".mp4", ".mkv", ".mov", ".webm", ".flv", ".ts", ".m4v", ".avi")
-BG = "#1b1b1f"
-FG = "#e8e8ea"
-MUTED = "#9a9aa2"
+BG = "#131316"
+FG = "#ececed"
+MUTED = "#9798a1"
 ACCENT = "#3ba55d"
 RAIL = "#101013"
 RAIL_ON = "#23242b"
-PANEL = "#191a1e"
+CARD = "#191a1e"
+PANEL = CARD
 BORDER = "#2c2d34"
-FIELD = "#2a2a30"
+FIELD = "#24252b"
 
 
 def apply_dark_styles(root):
@@ -252,29 +253,55 @@ class App:
             self.nav_buttons[page_key].configure(bg=RAIL_ON if current else RAIL,
                                                  fg=FG if current else MUTED)
         self.pages[key].pack(fill="both", expand=True)
+        self.page_key = key
         self.page_title.configure(text=titles[key][0])
         self.page_note.configure(text=titles[key][1])
         if key == "judge":
-            self.refresh_judge_page()
+            self.ensure_judge_panel()
         elif key == "stats":
             self.run_stats_into(self.stats_text)
 
     def build_judge_page(self, parent):
-        ttk.Label(parent, text="Judging happens in its own window so the list keeps your place "
-                              "while a run is going.", style="Muted.TLabel",
-                  wraplength=700, justify="left").pack(anchor="w", pady=(0, 10))
-        self.judge_count = ttk.Label(parent, text="", style="Title.TLabel",
-                                     font=("Segoe UI", 11))
-        self.judge_count.pack(anchor="w", pady=(0, 10))
-        row = ttk.Frame(parent)
-        row.pack(fill="x")
-        ttk.Button(row, text="Open judging window", command=self.open_judge).pack(side="left")
-        ttk.Button(row, text="Judge last run", command=self.judge_last_run).pack(side="left",
-                                                                                padx=(8, 0))
-        ttk.Button(row, text="Open clips folder", command=self.open_output).pack(side="right")
-        ttk.Label(parent, text="Keys: space plays, k keeps, m maybe, then b / w / e / l / c for "
-                              "a reason.", style="Muted.TLabel").pack(anchor="w", pady=(12, 0))
+        head = tk.Frame(parent, bg=BG)
+        head.pack(fill="x", pady=(0, 10))
+        self.judge_count = tk.Label(head, text="reading the library…", bg=BG, fg=MUTED,
+                                    font=("Segoe UI", 9))
+        self.judge_count.pack(side="left")
+        ttk.Button(head, text="Judge last run", command=self.judge_last_run).pack(side="right")
+        ttk.Button(head, text="Open in a window", command=self.judge_in_window).pack(
+            side="right", padx=(0, 8))
+        ttk.Button(head, text="Reload", command=lambda: self.load_judge_records(force=True)
+                   ).pack(side="right", padx=(0, 8))
+        self.judge_holder = tk.Frame(parent, bg=BG)
+        self.judge_holder.pack(fill="both", expand=True)
+        self.judge_panel = None
 
+    def load_judge_records(self, force=False):
+        if self.judge_panel is not None and not force:
+            return
+        self.judge_count.configure(text="reading the library…")
+
+        def run():
+            try:
+                self.queue.put(("judge_records", cf.disk_clips(self.cfg)))
+            except cf.Fail as exc:
+                self.queue.put(("judge_count", f"could not read the library: {exc}"))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def ensure_judge_panel(self):
+        if self.judge_panel is None:
+            self.judge_panel = JudgePanel(self.judge_holder, self.cfg, [])
+            self.judge_panel.bind_hotkeys(self.root)
+            self.load_judge_records(force=True)
+
+    def judge_in_window(self):
+        rows = self.judge_panel.records if self.judge_panel else []
+        if not rows:
+            messagebox.showinfo("ClipForge", "Nothing to judge yet - make some clips first.")
+            return
+        open_review_window(self.cfg, list(rows), "every clip on disk", root=self.root,
+                           name="all clips")
     def build_stats_page(self, parent):
         ttk.Label(parent, text="The same report as `cf stats`, read from feedback.jsonl.",
                   style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
@@ -536,26 +563,11 @@ class App:
             self.length_var.set(str(int(preset["length"])))
 
     def open_judge(self, records=None):
-        """Judge clips in the dedicated window, never in this one."""
+        """A finished run lands in the judging tab, already selected."""
         if records:
-            rows, target = list(records), self.run_dir or ""
-        else:
-            try:
-                rows = cf.unjudged_clips(self.cfg)
-                if rows:
-                    target = f"{len(rows)} clip(s) never judged, in {cf.media_root(self.cfg)}"
-                else:
-                    rows = cf.disk_clips(self.cfg)
-                    target = f"every clip on disk, {cf.media_root(self.cfg)}"
-            except cf.Fail as exc:
-                messagebox.showinfo("ClipForge", str(exc))
-                return
-        if not rows:
-            messagebox.showinfo("ClipForge", "Every clip on disk has been judged already.")
-            return
-        open_review_window(self.cfg, rows, target, root=self.root,
-                          name=Path(str(target)).name if records
-                          else ("never judged" if "never judged" in target else "all clips"))
+            self.ensure_judge_panel()
+            self.judge_panel.set_records(records)
+        self.show_page("judge")
 
     def check_update(self):
         """Ask GitHub which build is published, every launch, and say so either way."""
@@ -1001,6 +1013,14 @@ class App:
                         self.update_btn.pack(anchor="w", pady=(0, 6))
                 elif kind == "hardware":
                     self.hardware_pill.configure(text=payload)
+                elif kind == "judge_records":
+                    if self.judge_panel is not None:
+                        self.judge_panel.set_records(payload)
+                        never = sum(1 for row in payload if not row.get("verdict"))
+                        self.judge_count.configure(
+                            text=f"{len(payload)} clip(s) on disk  ·  {never} never judged")
+                    else:
+                        self.queue.put(("judge_records_cached", payload))
                 elif kind == "judge_count":
                     self.judge_count.configure(text=payload)
                 elif kind == "stats":
@@ -1032,17 +1052,213 @@ class App:
             pass
 
 
+class JudgePanel:
+    """The clip table, filter and verdict panel, shared by the tab and the window."""
+
+    def __init__(self, parent, cfg, records, on_change=None):
+        self.cfg = cfg
+        self.records = list(records)
+        self.on_change = on_change
+
+        body = tk.Frame(parent, bg=BG)
+        body.pack(fill="both", expand=True)
+
+        left = tk.Frame(body, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+        left.pack(side="left", fill="both", expand=True)
+
+        top = tk.Frame(left, bg=CARD)
+        top.pack(fill="x", padx=10, pady=(10, 6))
+        self.query = tk.StringVar()
+        field = tk.Entry(top, textvariable=self.query, font=("Segoe UI", 9), bg=FIELD, fg=FG,
+                         insertbackground=FG, relief="flat", highlightthickness=1,
+                         highlightbackground=BORDER, highlightcolor=ACCENT)
+        field.pack(side="left", fill="x", expand=True, ipady=4)
+        self.summary = tk.StringVar()
+        tk.Label(top, textvariable=self.summary, bg=CARD, fg=MUTED,
+                 font=("Segoe UI", 8)).pack(side="left", padx=(10, 0))
+
+        table = tk.Frame(left, bg=CARD)
+        table.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        columns = ("num", "clip", "at", "len", "score", "verdict")
+        self.tree = ttk.Treeview(table, columns=columns, show="headings", selectmode="browse")
+        for key, text, width, anchor in (("num", "#", 40, "center"), ("clip", "Clip", 340, "w"),
+                                         ("at", "At", 88, "w"), ("len", "Len", 50, "w"),
+                                         ("score", "Score", 60, "e"), ("verdict", "Verdict", 150, "w")):
+            self.tree.heading(key, text=text)
+            self.tree.column(key, width=width, anchor=anchor, stretch=(key == "clip"))
+        bar = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=bar.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        for tag, colour in (("keep", "#6ddc90"), ("maybe", "#dfc069"),
+                            ("reject", "#e08a8a"), ("none", "#c9c9d1")):
+            self.tree.tag_configure(tag, foreground=colour)
+
+        panel = tk.Frame(body, bg=CARD, width=258, highlightthickness=1,
+                         highlightbackground=BORDER)
+        panel.pack(side="right", fill="y", padx=(10, 0))
+        panel.pack_propagate(False)
+
+        actions = tk.Frame(panel, bg=CARD)
+        actions.pack(fill="x", padx=12, pady=(12, 2))
+        tk.Button(actions, text="Keep  k", relief="flat", bd=0, bg=ACCENT, fg="#0b1a10",
+                  activebackground="#45b96a", font=("Segoe UI Semibold", 9), padx=9, pady=5,
+                  cursor="hand2", command=lambda: self.judge("keep")).pack(side="left")
+        tk.Button(actions, text="Maybe  m", relief="flat", bd=0, bg=FIELD, fg=FG,
+                  activebackground="#33333a", font=("Segoe UI", 9), padx=9, pady=5,
+                  cursor="hand2", command=lambda: self.judge("maybe")).pack(side="left",
+                                                                           padx=(6, 0))
+        tk.Label(panel, text="Rejected because", bg=CARD, fg=MUTED,
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=12, pady=(12, 4))
+        for reason in cf.REJECT_REASONS:
+            tk.Button(panel, text=f"{reason}   {cf.REASON_KEYS[reason]}", anchor="w",
+                      relief="flat", bd=0, bg=FIELD, fg=FG, activebackground="#33333a",
+                      font=("Segoe UI", 9), padx=9, pady=5, cursor="hand2",
+                      command=lambda r=reason: self.judge("reject", r)).pack(
+                fill="x", padx=12, pady=1)
+        tk.Label(panel, text="boring and wrong moment blame the signals. late start, cut "
+                            "short and bad edit blame the window.", bg=CARD, fg="#6b6c76",
+                 font=("Segoe UI", 8), justify="left", wraplength=230).pack(
+            anchor="w", padx=12, pady=(10, 0))
+
+        self.counts = tk.StringVar()
+        tk.Label(panel, textvariable=self.counts, bg=CARD, fg=MUTED, justify="left",
+                 anchor="w", font=("Consolas", 9)).pack(anchor="w", padx=12, pady=(12, 0))
+
+        self.position = tk.StringVar()
+        tk.Label(panel, textvariable=self.position, bg=CARD, fg="#6b6c76", justify="left",
+                 anchor="w", font=("Segoe UI", 8), wraplength=230).pack(
+            anchor="w", padx=12, pady=(10, 12))
+
+        self.tree.bind("<<TreeviewSelect>>", self.show_position)
+        self.tree.bind("<Double-Button-1>", lambda _event: self.play())
+        self.query.trace_add("write", lambda *_args: self.refresh(select=self.current()))
+        self.refresh()
+
+    def bind_hotkeys(self, window):
+        """Keys live on the window, not the table: a focused entry must still type."""
+        def guarded(handler):
+            def run(event):
+                widget = window.focus_get()
+                if isinstance(widget, (tk.Entry, tk.Text)):
+                    return None
+                handler()
+                return "break"
+
+            return run
+
+        window.bind("k", guarded(lambda: self.judge("keep")))
+        window.bind("m", guarded(lambda: self.judge("maybe")))
+        window.bind("r", guarded(lambda: self.judge("reject")))
+        window.bind("<space>", guarded(self.play))
+        for reason in cf.REJECT_REASONS:
+            window.bind(cf.REASON_KEYS[reason],
+                        guarded(lambda r=reason: self.judge("reject", r)))
+
+    def set_records(self, records):
+        self.records = list(records)
+        self.refresh(select_first_unjudged=True)
+
+    def verdict_text(self, record):
+        if not record.get("verdict"):
+            return "unjudged"
+        if record.get("verdict") == "reject":
+            return "rejected · " + (record.get("reason") or "no reason")
+        return record["verdict"]
+
+    def row_values(self, index, record):
+        at = cf.fmt_ts(float(record["start"])) if record.get("start") is not None else ""
+        length = f"{float(record['duration']):.0f}s" if record.get("duration") else ""
+        score = f"{float(record['score']):.2f}" if record.get("score") is not None else ""
+        return (index + 1, Path(record["path"]).name, at, length, score,
+                self.verdict_text(record))
+
+    def refresh(self, select=None, select_first_unjudged=False):
+        self.tree.delete(*self.tree.get_children())
+        needle = self.query.get().strip().lower()
+        for index, record in enumerate(self.records):
+            values = self.row_values(index, record)
+            if needle and needle not in str(values[1]).lower() \
+                    and needle not in str(values[5]).lower():
+                continue
+            self.tree.insert("", "end", iid=str(index), values=values,
+                             tags=(record.get("verdict") or "none",))
+        kept = sum(1 for row in self.records if row.get("verdict") == "keep")
+        maybes = sum(1 for row in self.records if row.get("verdict") == "maybe")
+        dropped = sum(1 for row in self.records if row.get("verdict") == "reject")
+        left = len(self.records) - kept - maybes - dropped
+        self.summary.set(f"{kept} kept  ·  {maybes} maybe  ·  {dropped} rejected  ·  {left} to go")
+        reasoned = sum(1 for row in self.records if row.get("reason"))
+        self.counts.set(chr(10).join([f"judged {len(self.records) - left} of {len(self.records)}",
+                                      f"reasons {reasoned}"]))
+        target = None
+        if select_first_unjudged:
+            target = next((i for i, row in enumerate(self.records) if not row.get("verdict")),
+                          None)
+        elif select is not None:
+            target = select
+        if target is not None and self.records:
+            target = min(max(target, 0), len(self.records) - 1)
+            if self.tree.exists(str(target)):
+                self.tree.selection_set(str(target))
+                self.tree.see(str(target))
+                self.show_position()
+        if self.on_change:
+            self.on_change()
+
+    def show_position(self, _event=None):
+        selection = self.tree.selection()
+        if not selection:
+            return
+        index = int(selection[0])
+        line = f"row {index + 1} of {len(self.records)}"
+        reason = self.records[index].get("reason")
+        if reason:
+            line += f" · {reason}: {cf.REASON_NOTES.get(reason, '')}"
+        self.position.set(line)
+
+    def current(self):
+        selection = self.tree.selection()
+        return int(selection[0]) if selection else None
+
+    def play(self):
+        index = self.current()
+        if index is None:
+            return
+        try:
+            os.startfile(self.records[index]["path"])
+        except OSError as exc:
+            messagebox.showwarning("ClipForge", f"Can't play that file - {exc}")
+
+    def judge(self, verdict, reason=None):
+        index = self.current()
+        if index is None:
+            return
+        record = self.records[index]
+        if record.get("verdict") == "reject" and reason:
+            cf.update_reason(self.cfg, record["path"], reason)
+            record["reason"] = reason
+            self.refresh(select=index + 1)
+            return
+        if record.get("verdict") == verdict:
+            self.refresh(select=index + 1)
+            return
+        cf.record_feedback(self.cfg, record["path"], verdict, record, reason=reason)
+        record["verdict"] = verdict
+        record["reason"] = reason
+        self.refresh(select=index + 1)
+
+
 def open_review_window(cfg, records, target, root=None, name=None):
-    """Judge a run, laid out as a list of clips beside the verdict panel."""
+    """The same panel in its own window, for judging without the main one open."""
     own_root = root is None
     window = tk.Tk() if own_root else tk.Toplevel(root)
     apply_dark_styles(window)
     apply_icon(window)
-    title = f"ClipForge - judge clips: {name}" if name else "ClipForge - judge clips"
-    window.title(title)
+    window.title(f"ClipForge - judge clips: {name}" if name else "ClipForge - judge clips")
     window.configure(bg=BG)
-    window.geometry("1070x600")
-    window.minsize(880, 480)
+    window.geometry("1070x620")
+    window.minsize(880, 460)
 
     judged = {str(row.get("clip") or ""): row for row in cf.load_feedback(cfg)}
     for record in records:
@@ -1050,190 +1266,20 @@ def open_review_window(cfg, records, target, root=None, name=None):
         record["verdict"] = previous.get("verdict")
         record["reason"] = previous.get("reason")
 
-    head = tk.Frame(window, bg=BG)
-    head.pack(fill="x", padx=16, pady=(14, 8))
-    tk.Label(head, text=Path(str(target)).name or "clips", bg=BG, fg=FG,
-             font=("Segoe UI Semibold", 13)).pack(side="left")
-    status = tk.StringVar()
-    tk.Label(head, textvariable=status, bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(side="right")
+    header = tk.Frame(window, bg=BG)
+    header.pack(fill="x", padx=14, pady=(12, 8))
+    tk.Label(header, text="Judge clips", bg=BG, fg=FG,
+             font=("Segoe UI Semibold", 12)).pack(side="left")
+    tk.Label(header, text=Path(str(target)).name or "", bg=BG, fg=MUTED,
+             font=("Segoe UI", 9)).pack(side="left", padx=(10, 0))
 
-    search = tk.Frame(window, bg=BG)
-    search.pack(fill="x", padx=16, pady=(0, 8))
-    query = tk.StringVar()
-    field = tk.Entry(search, textvariable=query, font=("Segoe UI", 9), bg=FIELD, fg=FG,
-                     insertbackground=FG, relief="flat", highlightthickness=1,
-                     highlightbackground=BORDER, highlightcolor=ACCENT)
-    field.pack(side="left", fill="x", expand=True, ipady=4)
-    tk.Label(search, text="filter", bg=BG, fg="#6b6c76", font=("Segoe UI", 8)).pack(
-        side="left", padx=(8, 0))
+    holder = tk.Frame(window, bg=BG)
+    holder.pack(fill="both", expand=True, padx=14, pady=(0, 12))
+    panel = JudgePanel(holder, cfg, records)
 
-    body = tk.Frame(window, bg=BG)
-    body.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+    panel.bind_hotkeys(window)
+    panel.tree.focus_set()
 
-    table_area = tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
-    table_area.pack(side="left", fill="both", expand=True)
-    columns = ("num", "clip", "at", "len", "score", "verdict")
-    listing = ttk.Treeview(table_area, columns=columns, show="headings", selectmode="browse")
-    for key, text, width, anchor in (("num", "#", 40, "center"), ("clip", "Clip", 330, "w"),
-                                     ("at", "At", 88, "w"), ("len", "Len", 52, "w"),
-                                     ("score", "Score", 62, "e"), ("verdict", "Verdict", 140, "w")):
-        listing.heading(key, text=text)
-        listing.column(key, width=width, anchor=anchor, stretch=(key == "clip"))
-    bar = ttk.Scrollbar(table_area, orient="vertical", command=listing.yview)
-    listing.configure(yscrollcommand=bar.set)
-    listing.pack(side="left", fill="both", expand=True)
-    bar.pack(side="right", fill="y")
-    style = ttk.Style()
-    style.configure("Treeview", background=FIELD, fieldbackground=FIELD, foreground=FG,
-                    rowheight=26, borderwidth=0)
-    style.configure("Treeview.Heading", background=PANEL, foreground=MUTED,
-                    font=("Segoe UI", 9), borderwidth=0)
-    style.map("Treeview", background=[("selected", "#2f3a33")],
-              foreground=[("selected", "#ffffff")])
-    listing.tag_configure("keep", foreground="#6ddc90")
-    listing.tag_configure("maybe", foreground="#dfc069")
-    listing.tag_configure("reject", foreground="#e08a8a")
-    listing.tag_configure("none", foreground="#c9c9d1")
-
-    panel = tk.Frame(body, bg=PANEL, width=274, highlightthickness=1,
-                     highlightbackground=BORDER)
-    panel.pack(side="right", fill="y", padx=(12, 0))
-    panel.pack_propagate(False)
-
-    def panel_label(text, pady=(0, 4), color=MUTED, size=8):
-        tk.Label(panel, text=text, bg=PANEL, fg=color, font=("Segoe UI", size),
-                 justify="left", wraplength=246).pack(anchor="w", padx=14, pady=pady)
-
-    actions = tk.Frame(panel, bg=PANEL)
-    actions.pack(fill="x", padx=14, pady=(14, 4))
-    tk.Button(actions, text="Keep  k", relief="flat", bd=0, bg=ACCENT, fg="#0b1a10",
-              activebackground="#45b96a", font=("Segoe UI Semibold", 10), padx=10, pady=6,
-              cursor="hand2", command=lambda: judge("keep")).pack(side="left")
-    tk.Button(actions, text="Maybe  m", relief="flat", bd=0, bg=FIELD, fg=FG,
-              activebackground="#33333a", font=("Segoe UI", 10), padx=10, pady=6,
-              cursor="hand2", command=lambda: judge("maybe")).pack(side="left", padx=(6, 0))
-
-    panel_label("Rejected because", pady=(12, 4))
-    for reason in cf.REJECT_REASONS:
-        key = cf.REASON_KEYS[reason]
-        tk.Button(panel, text=f"{reason}   {key}", anchor="w", relief="flat", bd=0,
-                  bg=FIELD, fg=FG, activebackground="#33333a", font=("Segoe UI", 9),
-                  padx=9, pady=5, cursor="hand2",
-                  command=lambda r=reason: judge("reject", r)).pack(fill="x", padx=14, pady=1)
-    panel_label("boring and wrong moment blame the signals. late start, cut short and "
-                "bad edit blame the window.", pady=(10, 0), color="#6b6c76")
-
-    counts = tk.StringVar()
-    tk.Label(panel, textvariable=counts, bg=PANEL, fg=MUTED, justify="left", anchor="w",
-             font=("Consolas", 9)).pack(anchor="w", padx=14, pady=(14, 0))
-
-    position = tk.StringVar(value="")
-    foot = tk.Frame(window, bg=BG)
-    foot.pack(fill="x", padx=16, pady=(0, 12))
-    tk.Label(foot, textvariable=position, bg=BG, fg=MUTED, font=("Segoe UI", 9),
-             anchor="w").pack(side="left")
-    tk.Button(foot, text="Play  space", relief="flat", bd=0, bg=FIELD, fg=FG, padx=12, pady=4,
-              command=lambda: play(), cursor="hand2").pack(side="right")
-    tk.Button(foot, text="Open folder", relief="flat", bd=0, bg=FIELD, fg=FG, padx=12, pady=4,
-              command=lambda: cf.open_folder(Path(records[0]["path"]).parent),
-              cursor="hand2").pack(side="right", padx=(0, 6))
-
-    def verdict_text(record):
-        if not record.get("verdict"):
-            return "unjudged"
-        if record.get("verdict") == "reject":
-            return "rejected · " + (record.get("reason") or "no reason")
-        return record["verdict"]
-
-    def row_values(index, record):
-        at = cf.fmt_ts(float(record["start"])) if record.get("start") is not None else ""
-        length = f"{float(record['duration']):.0f}s" if record.get("duration") else ""
-        score = f"{float(record['score']):.2f}" if record.get("score") is not None else ""
-        return (index + 1, Path(record["path"]).name, at, length, score, verdict_text(record))
-
-    def refresh(select=None, select_first_unjudged=False):
-        listing.delete(*listing.get_children())
-        needle = query.get().strip().lower()
-        for index, record in enumerate(records):
-            values = row_values(index, record)
-            if needle and needle not in str(values[1]).lower() and needle not in str(values[5]).lower():
-                continue
-            listing.insert("", "end", iid=str(index), values=values,
-                           tags=(record.get("verdict") or "none",))
-        kept = sum(1 for row in records if row.get("verdict") == "keep")
-        how_many = sum(1 for row in records if row.get("verdict") == "maybe")
-        dropped = sum(1 for row in records if row.get("verdict") == "reject")
-        left = len(records) - kept - how_many - dropped
-        status.set(f"{kept} kept  ·  {how_many} maybe  ·  {dropped} rejected  ·  {left} to go")
-        reasoned = sum(1 for row in records if row.get("reason"))
-        counts.set(chr(10).join([f"judged {len(records) - left} of {len(records)}",
-                                f"reasons {reasoned}"]))
-        target_index = None
-        if select_first_unjudged:
-            target_index = next((i for i, row in enumerate(records) if not row.get("verdict")),
-                                None)
-        elif select is not None:
-            target_index = select
-        if target_index is not None and records:
-            target_index = min(max(target_index, 0), len(records) - 1)
-            listing.selection_set(str(target_index))
-            listing.see(str(target_index))
-            show_position()
-
-    def show_position(_event=None):
-        selection = listing.selection()
-        if not selection:
-            return
-        index = int(selection[0])
-        line = f"row {index + 1} of {len(records)}"
-        reason = records[index].get("reason")
-        if reason:
-            line += f"  ·  {reason}: {cf.REASON_NOTES.get(reason, '')}"
-        position.set(line)
-
-    def current():
-        selection = listing.selection()
-        return int(selection[0]) if selection else None
-
-    def play():
-        index = current()
-        if index is None:
-            return
-        try:
-            os.startfile(records[index]["path"])
-        except OSError as exc:
-            messagebox.showwarning("ClipForge", f"Can't play that file - {exc}")
-
-    def judge(verdict, reason=None):
-        index = current()
-        if index is None:
-            return
-        record = records[index]
-        if record.get("verdict") == "reject" and reason:
-            cf.update_reason(cfg, record["path"], reason)
-            record["reason"] = reason
-            refresh(select=index + 1)
-            return
-        if record.get("verdict") == verdict:
-            refresh(select=index + 1)
-            return
-        cf.record_feedback(cfg, record["path"], verdict, record, reason=reason)
-        record["verdict"] = verdict
-        record["reason"] = reason
-        refresh(select=index + 1)
-
-    listing.bind("<<TreeviewSelect>>", show_position)
-    query.trace_add("write", lambda *_args: refresh(select=current()))
-    window.bind("<space>", lambda _event: play())
-    window.bind("k", lambda _event: judge("keep"))
-    window.bind("m", lambda _event: judge("maybe"))
-    window.bind("r", lambda _event: judge("reject"))
-    for reason in cf.REJECT_REASONS:
-        window.bind(cf.REASON_KEYS[reason], lambda _event, r=reason: judge("reject", r))
-    listing.bind("<Double-Button-1>", lambda _event: play())
-
-    refresh(select_first_unjudged=True)
-    window.focus_set()
     if own_root:
         window.mainloop()
         kept = sum(1 for row in records if row.get("verdict") == "keep")
