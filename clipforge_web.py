@@ -552,9 +552,34 @@ def _claim_taskbar():
     threading.Thread(target=apply, daemon=True).start()
 
 
+_INSTANCE_LOCK = None
+
+
+def _already_running():
+    """One ClipForge at a time: a second window would write judgements over the first.
+
+    Returns True when another copy owns the lock, after bringing its window forward.
+    """
+    global _INSTANCE_LOCK
+    if os.name != "nt":
+        return False
+    import ctypes
+
+    _INSTANCE_LOCK = ctypes.windll.kernel32.CreateMutexW(None, False, "ClipForge.SingleInstance")
+    if ctypes.windll.kernel32.GetLastError() != 183:  # ERROR_ALREADY_EXISTS
+        return False
+    hwnd = ctypes.windll.user32.FindWindowW(None, "ClipForge")
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 9)
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+    return True
+
+
 def run():
     import webview
 
+    if _already_running():
+        return 0
     _claim_taskbar()
     api = Api()
     window = webview.create_window("ClipForge", str(UI), js_api=api, width=1357, height=920,
