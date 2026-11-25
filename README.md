@@ -17,6 +17,10 @@ Turns a livestream recording (or a VOD link) into vertical, captioned, post-read
 
 Your clips land in a `ClipForge` folder on your `D:` drive, or `C:` if there isn't one. The first time you make clips it downloads the 1.5 GB speech model, once; after that everything runs offline. Windows may warn that the file came from the internet: **More info → Run anyway**. Everything it installs is either from Microsoft's own package manager (winget) or from python.org.
 
+### Version numbers
+
+`VERSION` at the top of `clipforge.py` is the build number, and every build increments the patch: 0.0.5, 0.0.6, 0.0.7. The app compares that against the copy on `main` once a day and offers an update when the published one is higher, so a build is only ever "new" by that one line. Nothing else in the code should hard-code a version.
+
 ### Updating and removing
 
 The app checks GitHub once a day in the background and shows a **Version x.y.z is out** button in the top right when there is something newer; `cf update` prints the same comparison, with `--fresh` to bypass the half-day cache. To update, download the zip again and run **Install ClipForge** from the new folder: it copies over the old install and reuses the private Python, so it takes seconds. Your clips, transcripts and judgements are untouched.
