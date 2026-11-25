@@ -250,6 +250,8 @@ window.addEventListener("pywebviewready", boot);
 if (window.pywebview && window.pywebview.api) boot();
 
 function setView(view) {
+  const body = document.getElementById("body");
+  const carry = view === state.view ? body.scrollTop : 0;
   state.view = view;
   document.querySelectorAll(".nav").forEach((b) =>
     b.setAttribute("aria-selected", String(b.dataset.view === view)));
@@ -260,12 +262,14 @@ function setView(view) {
   };
   document.getElementById("head-title").textContent = titles[view][0];
   document.getElementById("head-sub").textContent = titles[view][1];
-  const body = document.getElementById("body");
   body.className = "body";
   body.innerHTML = "";
   if (view === "make") body.append(makeView());
   else if (view === "judge") body.append(judgeView());
   else body.append(statsView());
+  body.scrollTop = carry;
+  const current = body.querySelector("#current-clip");
+  if (current) current.scrollIntoView({ block: "nearest" });
 }
 
 function persist() {
@@ -529,6 +533,7 @@ function judgeView() {
         <div style="text-align:right">${verdictTag(row)}</div>
       </div>`);
     rowEl.addEventListener("click", () => { state.selected = index; setView("judge"); });
+    if (index === state.selected) rowEl.id = "current-clip";
     rowEl.addEventListener("dblclick", () => api.open_path(row.path));
     box.append(rowEl);
   });
@@ -577,9 +582,12 @@ async function submit(verdict, reason) {
   if (!row) return;
   row.verdict = verdict;
   row.reason = reason;
-  state.clips = await api.judge(row.path, verdict, reason);
-  const next = state.clips.findIndex((item) => !item.verdict);
-  state.selected = next === -1 ? Math.min(state.selected + 1, state.clips.length - 1) : next;
+  await api.judge(row.path, verdict, reason);
+  const after = state.clips.findIndex((item, index) => index > state.selected && !item.verdict);
+  const first = state.clips.findIndex((item) => !item.verdict);
+  if (after !== -1) state.selected = after;
+  else if (first !== -1) state.selected = first;
+  else state.selected = Math.min(state.selected, state.clips.length - 1);
   const left = state.clips.filter((item) => !item.verdict).length;
   document.getElementById("nav-left").textContent = left ? left : "";
   setView("judge");
