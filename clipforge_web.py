@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -108,6 +109,9 @@ class Api:
         self._hardware = None
         self._media = None
         self._media_token = secrets.token_hex(16)
+        self._updating = False
+        self._update = {"stage": "idle", "message": "", "percent": 0,
+                        "done": False, "failed": False}
         self.per_clip = None
         self.render_seconds = 0.0
         self.render_clips = 0
@@ -144,7 +148,91 @@ class Api:
 
     def update_available(self):
         latest, checked = cf.update_status(self.cfg, max_age=0)
-        return {"latest": latest if checked else None}
+        newer = bool(checked and latest and cf.parse_version(latest) > cf.parse_version(cf.VERSION))
+        return {"latest": latest if checked else None, "newer": newer, "version": cf.VERSION}
+
+    def update(self):
+        """Fetch the published build and hand it to the installer, then step out of the way.
+
+        The installer copies over this folder and reuses the private Python, so it has to run
+        after this process exits: a helper waits for the window to close, installs, and starts
+        the new build again.
+        """
+        if self._updating:
+            return {"ok": False, "why": "already updating"}
+        self._updating = True
+        threading.Thread(target=self._update_worker, daemon=True).start()
+        return {"ok": True}
+
+    def update_state(self):
+        return dict(self._update)
+
+    def _update_worker(self):
+        import tempfile
+        import zipfile
+
+        def stage(name, message, percent=None):
+            self._update["stage"] = name
+            self._update["message"] = message
+            if percent is not None:
+                self._update["percent"] = percent
+
+        try:
+            stage("download", "Downloading the new build…", 0)
+            work = Path(tempfile.mkdtemp(prefix="clipforge-update-"))
+            archive = work / "build.zip"
+            with urllib.request.urlopen(ZIP_URL, timeout=60) as response, archive.open("wb") as fh:
+                total = int(response.headers.get("Content-Length") or 0)
+                read = 0
+                while True:
+                    chunk = response.read(262144)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    read += len(chunk)
+                    if total:
+                        stage("download", f"Downloading the new build… {read // 1024} KB",
+                              round(100 * read / total))
+
+            stage("unpack", "Unpacking…", 100)
+            with zipfile.ZipFile(archive) as bundle:
+                bundle.extractall(work)
+            roots = [path for path in work.iterdir()
+                     if path.is_dir() and (path / "install.ps1").exists()]
+            if not roots:
+                raise RuntimeError("the download did not look like ClipForge")
+            source = roots[0]
+
+            helper = work / "finish-update.ps1"
+            app = TOOL_DIR / "clipforge_gui.py"
+            pythonw = Path(sys.executable).with_name("pythonw.exe")
+            lines = [
+                "Start-Sleep -Seconds 3",
+                "& '" + str(source / "install.ps1") + "' -NoPause",
+                "Start-Process -FilePath '" + str(pythonw) + "' -ArgumentList '"
+                + str(app) + "'",
+            ]
+            helper.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+            stage("install", "Installing, then ClipForge restarts itself…", 100)
+            flags = 0
+            if os.name == "nt":
+                flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+            subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                              "-File", str(helper)], creationflags=flags, close_fds=True)
+            self._update["done"] = True
+            threading.Timer(1.5, self._close_for_update).start()
+        except Exception as exc:  # noqa: BLE001 - the window is the only way to say so
+            self._update["stage"] = "failed"
+            self._update["message"] = f"The update did not go through: {exc}"
+            self._update["failed"] = True
+            self._updating = False
+
+    def _close_for_update(self):
+        try:
+            if self._window is not None:
+                self._window.destroy()
+        except Exception:  # noqa: BLE001 - already closing is fine
+            pass
 
     def _encoder(self):
         try:
@@ -551,6 +639,8 @@ def _claim_taskbar():
 
     threading.Thread(target=apply, daemon=True).start()
 
+
+ZIP_URL = f"https://github.com/{cf.REPO}/archive/refs/heads/main.zip"
 
 _INSTANCE_LOCK = None
 

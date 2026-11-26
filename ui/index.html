@@ -177,6 +177,12 @@
   .reasons [data-reason] kbd { color: #5a2f2f; border-color: #d79c9c; }
   /* Watching a clip happens in the window now: the cover is the button, and the player
      opens over the page so judging keys still reach it. */
+  /* The update the launch check found, offered where the version is. */
+  .update-btn { display: flex; align-items: center; gap: 6px; margin: 0 4px 10px;
+    padding: 7px 10px; border-radius: 7px; border: 1px solid #2e4638;
+    background: #223028; color: #8fe0a8; font-size: 11.5px; cursor: pointer; }
+  .update-btn:hover { background: #273a2f; }
+  .update-btn[hidden] { display: none; }
   /* Verdict filters under the search box, and the batches the clips came from. */
   .filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px;
     border-bottom: 1px solid var(--line); background: #17181c; }
@@ -221,8 +227,9 @@
   <aside class="rail">
     <div class="brand">
       <div class="logo"><img id="brand-logo" src="" alt=""></div>
-      <div><strong>ClipForge</strong><span id="rail-version">0.4.0</span></div>
+      <div><strong>ClipForge</strong><span id="rail-version"></span></div>
     </div>
+    <button class="update-btn" id="update-btn" hidden>Update to <span id="update-version"></span></button>
     <button class="nav" data-view="make" aria-selected="true">
       <svg class="ico" viewBox="0 0 16 16"><path d="M3 3h10v10H3z"/><path d="M7 6.2 10.4 8 7 9.8z"/></svg>
       Make clips
@@ -250,6 +257,16 @@
     </header>
     <div class="body" id="body"></div>
   </main>
+
+  <div class="viewer" id="updater" hidden>
+    <div class="viewer-box" style="width:380px">
+      <div class="viewer-bar"><span class="name" id="update-stage">Updating ClipForge…</span></div>
+      <section class="card" style="width:100%"><div class="pad" style="display:grid;gap:10px">
+        <div class="progress" id="update-progress"><i style="width:0%"></i></div>
+        <p class="hint" id="update-message" style="margin:0"></p>
+      </div></section>
+    </div>
+  </div>
 
   <div class="viewer" id="viewer" hidden>
     <div class="viewer-box">
@@ -311,11 +328,13 @@ function boot() {
     document.getElementById("hardware-text").textContent = part.device + " · " + part.encoder;
   });
   api.update_available().then((part) => {
-    const shown = document.getElementById("rail-version").textContent;
-    if (part.latest && part.latest !== (state.info || {}).version) {
-      document.getElementById("rail-version").textContent = shown + " · " + part.latest + " out";
-    } else if (shown) {
-      document.getElementById("rail-version").textContent = shown + " · up to date";
+    const line = document.getElementById("rail-version");
+    if (part.newer) {
+      line.textContent = part.version + " · " + part.latest + " out";
+      document.getElementById("update-version").textContent = part.latest;
+      document.getElementById("update-btn").hidden = false;
+    } else if (line.textContent) {
+      line.textContent = part.version + " · up to date";
     }
   });
   api.settings().then((settings) => {
@@ -340,6 +359,33 @@ document.getElementById("viewer-close").addEventListener("click", closeViewer);
 document.getElementById("viewer").addEventListener("click", (event) => {
   if (event.target.id === "viewer") closeViewer();
 });
+async function runUpdate() {
+  document.getElementById("updater").hidden = false;
+  const started = await api.update();
+  if (!started.ok) {
+    document.getElementById("update-message").textContent = "An update is already running.";
+    return;
+  }
+  const step = async () => {
+    const state_ = await api.update_state();
+    const bar = document.querySelector("#update-progress > i");
+    if (bar) bar.style.width = (state_.percent || 0) + "%";
+    const message = document.getElementById("update-message");
+    if (message) message.textContent = state_.message || "";
+    if (state_.failed) {
+      if (message) message.textContent += " Try again, or run Install ClipForge from a fresh download.";
+      return;
+    }
+    if (state_.done) {
+      const stage = document.getElementById("update-stage");
+      if (stage) stage.textContent = "Installing and restarting ClipForge…";
+    }
+    setTimeout(step, 600);
+  };
+  step();
+}
+
+document.getElementById("update-btn").addEventListener("click", runUpdate);
 window.addEventListener("pywebviewready", boot);
 if (window.pywebview && window.pywebview.api) boot();
 
