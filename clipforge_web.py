@@ -385,6 +385,9 @@ class Api:
         """
         ns = self._opts(payload)
         want = int(payload.get("count", 2))
+        for item in picks:
+            self.say(f"  cutting {cf.fmt_ts(item['start'])}-{cf.fmt_ts(item['end'])} "
+                     f"(score {item['score']})")
         started = time.time()
         made = {}
         todo = list(picks)
