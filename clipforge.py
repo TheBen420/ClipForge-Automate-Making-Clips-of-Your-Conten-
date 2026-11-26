@@ -777,7 +777,7 @@ def resample(values, from_bucket, to_bucket):
 
 TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 MIN_CHAT_MESSAGES = 5
-VERSION = "0.7.3"
+VERSION = "0.8.0"
 REPO = "TheBen420/ClipForge-Automate-Making-Clips-of-Your-Conten-"
 REPO_URL = f"https://github.com/{REPO}"
 MIN_CHAT_MESSAGES = 5
@@ -884,24 +884,32 @@ def boost_hits(text, phrases):
     return sum(1 for phrase in phrases if phrase and phrase in lowered)
 
 
-def snap_bounds(data, peak, length, min_len, total, max_pre=3.0):
-    """Start just before the peak and end on the first natural pause after it.
+def snap_bounds(data, peak, length, min_len, total, max_pre=3.0, lead=None, tail=None):
+    """Open on the run-up to the peak and close just after it.
 
-    A window of exactly `length` cuts mid-thought and can drop the line that explains
-    what just happened. So the end is the first sentence boundary at or after the target
-    that is followed by a real pause, searched up to `length * 0.6` past it - usually
-    a few seconds, occasionally a dozen - and only if no pause turns up in that range
-    does it fall back to the word boundary closest to the target.
+    The loudest instant is rarely the start of the moment worth posting - it is the
+    payoff of a run-up that began several seconds earlier, which is exactly what a boss
+    kill needs to land. So the window opens `lead` seconds before the peak and closes
+    `tail` seconds after it, ending on a natural pause only when one sits close by,
+    instead of drifting a dozen seconds past the payoff.
     """
     segments = data.get("segments") or []
-    start = max(0.0, peak - 1.5)
-    for segment in segments:
-        if segment["start"] <= peak <= segment["end"]:
-            start = max(segment["start"], peak - max_pre)
-            break
+    if lead:
+        start = max(0.0, peak - float(lead))
+        for segment in segments:
+            if 0 <= start - segment["start"] <= 1.5:
+                start = segment["start"]
+                break
+    else:
+        start = max(0.0, peak - 1.5)
+        for segment in segments:
+            if segment["start"] <= peak <= segment["end"]:
+                start = max(segment["start"], peak - max_pre)
+                break
 
-    target_end = start + length
-    horizon = min(total, target_end + max(6.0, length * 0.6))
+    target_end = peak + float(tail) if tail else start + length
+    target_end = max(target_end, start + min_len)
+    horizon = min(total, target_end + (3.0 if tail else max(6.0, length * 0.6)))
     end = None
     for index, segment in enumerate(segments):
         if segment["end"] < target_end - 1.0 or segment["start"] > horizon:
@@ -1037,6 +1045,9 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
     combined = np.convolve(combined, np.ones(smooth) / smooth, mode="same")
 
     win = float(length) if length else min(24.0, max(min_len, total * 0.55))
+    preset_conf = (cfg.get("presets") or {}).get(preset or "", {}) or {}
+    lead = float(preset_conf.get("lead") or win * 0.65)
+    tail = float(preset_conf.get("tail") or max(4.0, win - lead))
     hop = max(1.5, win / 8)
     edge = min(float(cfg.get("skip_edges", 60)), total * 0.1)
     usable_start = edge
@@ -1082,19 +1093,22 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
     candidates.sort(key=lambda c: -c["score"])
     results, taken = [], []
     blocked = None
-    for candidate in candidates:
+
+    def take(candidate, respect_avoid):
+        nonlocal blocked
         if candidate["peak"] > total - min_len:
-            continue
-        start, end = snap_bounds(data, candidate["peak"], win, min_len, total)
+            return False
+        start, end = snap_bounds(data, candidate["peak"], win, min_len, total,
+                                 lead=lead, tail=tail)
         if min_words and words_between(start, end) < min_words:
-            continue
-        if avoid and overlaps_past(start, end, avoid):
+            return False
+        if respect_avoid and avoid and overlaps_past(start, end, avoid):
             blocked = max(blocked or 0.0, candidate["score"])
-            continue
+            return False
         if end - start < min_len * 0.5:
-            continue
+            return False
         if any(start < other[1] - 0.4 and end > other[0] + 0.4 for other in taken):
-            continue
+            return False
         taken.append((start, end))
         text = " ".join(s["text"] for s in data.get("segments") or []
                         if s["end"] > start and s["start"] < end).strip()
@@ -1107,17 +1121,29 @@ def analyze(cfg, entry, meta, data, preset=None, weights=None, want=40, min_word
             "features": {name: round(value, 3) for name, value in candidate["features"].items()},
             "text": text,
         })
+        return True
+
+    for candidate in candidates:
         if len(results) >= want:
             break
+        take(candidate, True)
 
     if not results and min_words:
         print(f"  (no window had {min_words} spoken words - falling back to every signal)")
         return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want,
                        avoid=avoid)
+
     if len(results) < want and avoid:
-        print("  (every strong moment has already been clipped - reusing earlier windows)")
-        return analyze(cfg, entry, meta, data, preset=preset, weights=weights, want=want,
-                       min_words=min_words)
+        # Asking for three clips and getting one is the worse answer: keep the untouched
+        # moments found, then top the batch up with the strongest already-cut windows.
+        kept = len(results)
+        for candidate in candidates:
+            if len(results) >= want:
+                break
+            take(candidate, False)
+        if len(results) > kept:
+            print(f"  (topped up with {len(results) - kept} already-clipped moment(s) - "
+                  f"every strong moment here has been cut)")
 
     summary = {"total": round(total, 1), "candidates": len(candidates), "window": round(win, 1),
                "weights": {name: round(float(weight), 3) for name, weight in merged.items()}}
