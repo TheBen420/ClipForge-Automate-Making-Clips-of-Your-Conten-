@@ -35,6 +35,12 @@ D:\ClipForge\clips\Palworld Good Ultra Boss Kills\
 
 `Open clips folder` jumps straight there.
 
+## Two clips can render at once, and it is switched off on purpose
+
+Rendering overlaps by design. Each clip decodes on the CPU and encodes on the GPU, so two clips in flight use both halves of the machine, and `render_workers` in `config.json` is what decides how many are in flight. It is set to 1, and that is a measurement rather than an oversight: two at once pushed CPU use from 31% to 92% to save 4% of the wall clock, so the extra heat and fan noise bought nothing. The capability is still there for anyone who wants it — set `render_workers` to 2 and restart — and the cap is 2, because a render already fills every core and a third is how a fan curve turns into a thermal shutdown. A number above 2 is held at 2 with a line in the log saying so. Nothing in the window writes that key, so a hand edit survives every later save of the other settings.
+
+The full story, including the measurements and the other cap values, is in **[docs/reference.md](docs/reference.md)**.
+
 ## Judge clips
 
 ![The Judge clips tab](docs/tab-judge.png)
@@ -51,7 +57,9 @@ Every judgement is stored in `D:\ClipForge\feedback.jsonl`, and this tab reads i
 
 ## Updating and removing
 
-The app compares itself against this repository once a day and offers an update when there is a newer build. To update, download the zip again and run **Install ClipForge** from the new folder: it copies over the old install and reuses the private Python, so it takes seconds. Your clips, transcripts and judgements are untouched.
+The app compares itself against this repository once a day. When there is a newer build, an **Update** button appears in the rail above the version line: press it and ClipForge downloads the new version, installs it over itself, and reopens. Nothing to unzip, no installer to run twice. If an update ever fails, the reason is written to `update.log` in the temporary folder the updater names in the log.
+
+You can still do it by hand — download the zip again and run **Install ClipForge** from the new folder — which copies over the old install and reuses the private Python. Either way your clips, transcripts and judgements are untouched.
 
 **Uninstall ClipForge** removes the app, its private Python and the desktop shortcut. It keeps `D:\ClipForge` unless you type `DELETE CLIPS` at the prompt.
 
