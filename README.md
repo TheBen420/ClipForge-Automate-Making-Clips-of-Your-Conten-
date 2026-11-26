@@ -35,11 +35,9 @@ D:\ClipForge\clips\Palworld Good Ultra Boss Kills\
 
 `Open clips folder` jumps straight there.
 
-## Two clips can render at once, and it is switched off on purpose
+## Two clips can render at once, and it is off by design
 
-Rendering overlaps by design. Each clip decodes on the CPU and encodes on the GPU, so two clips in flight use both halves of the machine, and `render_workers` in `config.json` is what decides how many are in flight. It is set to 1, and that is a measurement rather than an oversight: two at once pushed CPU use from 31% to 92% to save 4% of the wall clock, so the extra heat and fan noise bought nothing. The capability is still there for anyone who wants it — set `render_workers` to 2 and restart — and the cap is 2, because a render already fills every core and a third is how a fan curve turns into a thermal shutdown. A number above 2 is held at 2 with a line in the log saying so. Nothing in the window writes that key, so a hand edit survives every later save of the other settings.
-
-The full story, including the measurements and the other cap values, is in **[docs/reference.md](docs/reference.md)**.
+Each clip decodes on the CPU and encodes on the GPU, so two renders in flight use both halves of the machine. `render_workers` in `config.json` decides how many run at once. It ships at 1 because two at once took CPU from 31% to 92% to save 4% of the wall clock. Set it to 2 and restart if you want it anyway; the cap is 2, since one render already fills every core, and a higher number is held at 2 with a line in the log. Measurements and the other caps are in [docs/reference.md](docs/reference.md).
 
 ## Judge clips
 
