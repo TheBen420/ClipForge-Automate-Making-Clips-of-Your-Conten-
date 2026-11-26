@@ -400,7 +400,14 @@ class Api:
             clips, failed = cf.render_many(self.cfg, entry, meta, data, todo, ns,
                                            flat_dir=out_dir)
             for item, clip in pair(todo, clips, failed):
-                made[item["rank"]] = (item, clip)
+                # Trusting the return value is how a batch came up one clip light with
+                # nothing in the log: a render can report a path it never wrote.
+                if clip is None or not Path(clip).exists():
+                    self.say(f"  {cf.fmt_ts(item['start'])} reported done but no file "
+                             f"appeared - counting it as a failure")
+                    failed.append((item, "no file on disk"))
+                else:
+                    made[item["rank"]] = (item, clip)
             todo = [item for item, _ in failed]
             for item, exc in failed:
                 self.say(f"  render failed at {cf.fmt_ts(item['start'])}: {exc}")
