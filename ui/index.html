@@ -852,19 +852,46 @@ function closeViewer() {
   video.load();
 }
 
+const groupName = (row) => row.source || "Clips";
+
+/* The rows are drawn grouped by batch, newest first, not in the order the clips were
+   loaded, so "the next clip" has to be read off that display order. */
+function displayOrder() {
+  const groups = new Map();
+  state.clips.forEach((item) => {
+    const key = groupName(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  const newest = (name) => Math.max(...groups.get(name).map((item) => item.added || 0));
+  return Array.from(groups.keys())
+    .sort((a, b) => newest(b) - newest(a))
+    .flatMap((name) => groups.get(name));
+}
+
 async function submit(verdict, reason) {
   const row = state.clips[state.selected];
   if (!row) return;
   row.verdict = verdict;
   row.reason = reason;
   await api.judge(row.path, verdict, reason);
-  const after = state.clips.findIndex((item, index) => index > state.selected && !item.verdict && clipMatches(item));
-  const first = state.clips.findIndex((item) => !item.verdict && clipMatches(item));
-  if (after !== -1) state.selected = after;
-  else if (first !== -1) state.selected = first;
-  else state.selected = Math.min(state.selected, state.clips.length - 1);
+
+  // A finished batch folds shut, so the next clip is the next thing on screen instead of
+  // the start of the list below a screenful of clips that are already decided.
+  const batch = groupName(row);
+  const leftInBatch = state.clips.some((item) =>
+    groupName(item) === batch && !item.verdict && clipMatches(item));
+  if (!leftInBatch) state.open.delete(batch);
+
+  const order = displayOrder();
+  const here = order.indexOf(row);
+  const queue = here >= 0 ? order.slice(here + 1).concat(order.slice(0, here)) : order;
+  const next = queue.find((item) => !item.verdict && clipMatches(item));
+  state.selected = next ? state.clips.indexOf(next)
+                        : Math.min(state.selected, state.clips.length - 1);
   const arrived = state.clips[state.selected];
-  if (arrived && arrived.source !== row.source) state.open.add(arrived.source || "Clips");
+  if (arrived) state.open.add(groupName(arrived));
+
   const left = state.clips.filter((item) => !item.verdict).length;
   document.getElementById("nav-left").textContent = left ? left : "";
   setView("judge");
