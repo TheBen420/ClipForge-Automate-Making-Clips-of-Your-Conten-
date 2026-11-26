@@ -207,6 +207,7 @@ class Api:
             app = TOOL_DIR / "clipforge_gui.py"
             pythonw = Path(sys.executable).with_name("pythonw.exe")
             lines = [
+                "Start-Transcript -Path '" + str(work / "update.log") + "' -Force | Out-Null",
                 "Start-Sleep -Seconds 3",
                 "& '" + str(source / "install.ps1") + "' -NoPause",
                 "Start-Process -FilePath '" + str(pythonw) + "' -ArgumentList '"
@@ -219,8 +220,12 @@ class Api:
                 # CREATE_NO_WINDOW alone: pairing it with DETACHED_PROCESS makes Windows
                 # refuse to start the helper, which left the update half done.
                 flags = subprocess.CREATE_NO_WINDOW
+            # The window has no console to hand down, so the helper gets its own output file
+            # instead of invalid handles - which is what killed it before.
+            transcript = (work / "helper-output.log").open("wb")
             subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                              "-File", str(helper)], creationflags=flags, close_fds=True)
+                              "-File", str(helper)], creationflags=flags, close_fds=True,
+                             stdin=subprocess.DEVNULL, stdout=transcript, stderr=transcript)
             self._update["done"] = True
             threading.Timer(1.5, self._close_for_update).start()
         except Exception as exc:  # noqa: BLE001 - the window is the only way to say so
