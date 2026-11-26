@@ -407,18 +407,22 @@ class Api:
             if todo and attempt == 1:
                 self.say("  trying those again")
 
-        for item in todo:
-            if len(made) >= want or not spare_pool:
-                break
-            else_item = spare_pool.pop(0)
-            else_item["weights"] = item.get("weights")
-            self.say(f"  standing in the next best moment at {cf.fmt_ts(else_item['start'])}")
-            clips, failed = cf.render_many(self.cfg, entry, meta, data, [else_item], ns,
+        # Short is short however it happened: a render that failed and a render that
+        # quietly left no file both land here, and the next best moments fill the gap.
+        while len(made) < want and spare_pool:
+            spare = spare_pool.pop(0)
+            spare["weights"] = picks[0].get("weights") if picks else None
+            self.say(f"  short by {want - len(made)} - cutting "
+                     f"{cf.fmt_ts(spare['start'])} as well")
+            clips, failed = cf.render_many(self.cfg, entry, meta, data, [spare], ns,
                                            flat_dir=out_dir)
-            for good, clip in pair([else_item], clips, failed):
+            for good, clip in pair([spare], clips, failed):
                 made[good["rank"]] = (good, clip)
             for _, exc in failed:
                 self.say(f"  that one failed too: {exc}")
+        if len(made) < want:
+            self.say(f"  asked for {want} clip(s), made {len(made)} - this recording "
+                     f"has no more moments that render")
 
         if made:
             self.render_seconds += time.time() - started
@@ -433,6 +437,16 @@ class Api:
                             "start": item["start"], "end": item["end"], "rank": rank,
                             "score": item["score"], "features": item["features"],
                             "weights": item.get("weights")})
+
+        if records:
+            # A run from the window counts as used footage too. Without this the next run
+            # here scores the same top moments again and hands back the same clip twice.
+            cf.write_session(self.cfg, "window", meta.get("path") or meta.get("url") or entry.name,
+                             entry.name,
+                             [{"start": row["start"], "end": row["end"], "score": row["score"],
+                               "rank": row["rank"]} for row in records],
+                             {"weights": records[0].get("weights") or {}},
+                             time.time() - started)
         return records
 
     def _run_folder(self, payload):
