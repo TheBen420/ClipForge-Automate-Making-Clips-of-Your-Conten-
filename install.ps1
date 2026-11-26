@@ -178,6 +178,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Good "Libraries installed."
 
+# Whisper runs on the GPU only if the CUDA maths libraries are present, and a fresh install
+# has none of them: the wheels are commented out of requirements.txt because they are large
+# and only useful with an NVIDIA card. Install them here when there is one, and carry on if
+# the download fails - the CPU path still works.
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    Say "  Found an NVIDIA card - adding the CUDA libraries so transcription runs on the GPU."
+    & $venvPython -m pip install --quiet nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+    if ($LASTEXITCODE -ne 0) {
+        Note "Couldn't fetch the CUDA libraries. ClipForge still runs, on the CPU, just slower."
+    }
+}
+
 # ---------------------------------------------------------------- doctor
 Head "4 of 4   Checking this PC can run ClipForge"
 & $venvPython (Join-Path $root "clipforge.py") doctor
