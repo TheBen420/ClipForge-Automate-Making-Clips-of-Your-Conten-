@@ -375,20 +375,62 @@ class Api:
             fps=None if payload.get("fps") in (None, "auto") else int(payload["fps"]),
             pad=0.2, snap=True, open=False)
 
-    def _clips(self, entry, meta, data, picks, payload, out_dir):
+    def _clips(self, entry, meta, data, picks, payload, out_dir, spares=()):
+        """Render the picks, and keep going until the number asked for exists.
+
+        A render can fail for a reason that is gone a second later - a VOD segment that
+        did not arrive - so a failure is retried once, and if it fails again the next
+        ranked moment takes its place. Three asked for is three made, or an honest word
+        about why the footage could not give them.
+        """
         ns = self._opts(payload)
+        want = int(payload.get("count", 2))
         started = time.time()
-        made, failed = cf.render_many(self.cfg, entry, meta, data, picks, ns, flat_dir=out_dir)
+        made = {}
+        todo = list(picks)
+        spare_pool = list(spares)
+
+        def pair(items, clips, failed_items):
+            dead = {item["rank"] for item in failed_items}
+            return list(zip([item for item in items if item["rank"] not in dead], clips))
+
+        for attempt in (1, 2):
+            if not todo:
+                break
+            clips, failed = cf.render_many(self.cfg, entry, meta, data, todo, ns,
+                                           flat_dir=out_dir)
+            for item, clip in pair(todo, clips, failed):
+                made[item["rank"]] = (item, clip)
+            todo = [item for item, _ in failed]
+            for item, exc in failed:
+                self.say(f"  render failed at {cf.fmt_ts(item['start'])}: {exc}")
+            if todo and attempt == 1:
+                self.say("  trying those again")
+
+        for item in todo:
+            if len(made) >= want or not spare_pool:
+                break
+            else_item = spare_pool.pop(0)
+            else_item["weights"] = item.get("weights")
+            self.say(f"  standing in the next best moment at {cf.fmt_ts(else_item['start'])}")
+            clips, failed = cf.render_many(self.cfg, entry, meta, data, [else_item], ns,
+                                           flat_dir=out_dir)
+            for good, clip in pair([else_item], clips, failed):
+                made[good["rank"]] = (good, clip)
+            for _, exc in failed:
+                self.say(f"  that one failed too: {exc}")
+
         if made:
             self.render_seconds += time.time() - started
             self.render_clips += len(made)
             self.per_clip = round(self.render_seconds / self.render_clips, 1)
-        for item, exc in failed:
-            self.say(f"  render failed at {cf.fmt_ts(item['start'])}: {exc}")
+
         records = []
-        for item, clip in zip(picks, made):
-            records.append({"path": str(clip), "entry": entry.name, "duration": item.get("duration"),
-                            "start": item["start"], "end": item["end"], "rank": item["rank"],
+        for rank in sorted(made):
+            item, clip = made[rank]
+            records.append({"path": str(clip), "entry": entry.name,
+                            "duration": item.get("duration"),
+                            "start": item["start"], "end": item["end"], "rank": rank,
                             "score": item["score"], "features": item["features"],
                             "weights": item.get("weights")})
         return records
@@ -408,11 +450,11 @@ class Api:
             self.say(f"({index}/{len(files)}) {path.name}")
             entry, meta, data = self._prepare(path)
             out_dir = self._dest(cf.safe_name(path.stem), payload)
-            picks = self._analyze(entry, meta, data, payload)
+            picks, spares = self._analyze(entry, meta, data, payload)
             if not picks:
                 self.say("  nothing worth cutting there")
                 continue
-            everything.extend(self._clips(entry, meta, data, picks, payload, out_dir))
+            everything.extend(self._clips(entry, meta, data, picks, payload, out_dir, spares))
         return everything
 
     def _run_vod(self, payload):
@@ -439,8 +481,8 @@ class Api:
                 self.say(f"  chat unavailable ({exc})")
         entry, meta, data = self._index(entry)
         out_dir = self._dest(cf.safe_name(info["title"]), payload)
-        picks = self._analyze(entry, meta, data, payload)
-        return self._clips(entry, meta, data, picks, payload, out_dir)
+        picks, spares = self._analyze(entry, meta, data, payload)
+        return self._clips(entry, meta, data, picks, payload, out_dir, spares)
 
     def _prepare(self, path):
         resolved = path.resolve()
@@ -482,10 +524,14 @@ class Api:
         note = cf.used_up_note(summary)
         if note:
             self.say(f"  {note}")
-        picks = ranked[: int(payload.get("count", 2))]
+        want = int(payload.get("count", 2))
+        picks = ranked[:want]
         for item in picks:
             item["weights"] = summary.get("weights")
-        return picks
+        spares = ranked[want:want * 2]
+        for item in spares:
+            item["weights"] = summary.get("weights")
+        return picks, spares
 
     # ---------------------------------------------------------------- job log
 
