@@ -216,7 +216,9 @@ class Api:
             stage("install", "Installing, then ClipForge restarts itself…", 100)
             flags = 0
             if os.name == "nt":
-                flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+                # CREATE_NO_WINDOW alone: pairing it with DETACHED_PROCESS makes Windows
+                # refuse to start the helper, which left the update half done.
+                flags = subprocess.CREATE_NO_WINDOW
             subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                               "-File", str(helper)], creationflags=flags, close_fds=True)
             self._update["done"] = True
